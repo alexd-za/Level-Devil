@@ -848,53 +848,50 @@ class GameController:
         cy = enemy.gy_f * TILE_SIZE + TILE_SIZE / 2 + oy
 
         at = enemy._anim_timer
-        wobble = math.sin(at * 9.0) * 1.8
-        pulse  = 11 + math.sin(at * 4.0) * 2.5
+        pulse_r = 11 + math.sin(at * 4.0) * 2.5
 
-        # Glow aura
+        in_wall = self.level._wall_map.get((int(enemy.gx_f), int(enemy.gy_f))) is not None
+
         self.canvas.create_oval(
-            cx - pulse, cy - pulse, cx + pulse, cy + pulse,
+            cx - pulse_r - 2, cy - pulse_r - 2,
+            cx + pulse_r + 2, cy + pulse_r + 2,
             fill="", outline="#3a0000", width=2,
         )
 
-        # Diamond body
-        pts = [
-            cx + wobble * 0.5, cy - 10,
-            cx + 8,            cy + wobble * 0.3,
-            cx - wobble * 0.5, cy + 10,
-            cx - 8,            cy - wobble * 0.3,
+        hw, hh = 9, 9
+        body_pts = [
+            cx,      cy - hh - 2,
+            cx + hw, cy - hh + 2,
+            cx + hw + 2, cy,
+            cx + hw, cy + hh - 2,
+            cx,      cy + hh + 2,
+            cx - hw, cy + hh - 2,
+            cx - hw - 2, cy,
+            cx - hw, cy - hh + 2,
         ]
-        self.canvas.create_polygon(pts, fill="#5a0000", outline="#cc1100", width=1)
+        self.canvas.create_polygon(body_pts, fill="#5a0000", outline="#cc1100", width=1)
 
-        # Inner highlight
-        pts2 = [cx + wobble * 0.3, cy - 5,
-                cx + 4, cy + wobble * 0.2,
-                cx - wobble * 0.3, cy + 5,
-                cx - 4, cy - wobble * 0.2]
-        self.canvas.create_polygon(pts2, fill="#880000", outline="")
+        self.canvas.create_rectangle(
+            cx - 6, cy - 6, cx + 6, cy + 6,
+            fill="#880000", outline="",
+        )
 
-        # Top spikes
-        for i in (-3, 0, 3):
-            sx = cx + i + wobble * 0.2
-            self.canvas.create_polygon(
-                [sx, cy - 14, sx - 1.5, cy - 10, sx + 1.5, cy - 10],
-                fill="#cc1100", outline="",
+        eye_x = cx + math.sin(at * 3.5) * 5.0
+        eye_y = cy - 1
+        self.canvas.create_oval(
+            eye_x - 3, eye_y - 2.5, eye_x + 3, eye_y + 2.5,
+            fill="#ff0000", outline="#ff6600", width=1,
+        )
+        self.canvas.create_oval(
+            eye_x - 1.2, eye_y - 1.0, eye_x + 1.2, eye_y + 1.0,
+            fill="#ffffff", outline="",
+        )
+
+        if in_wall:
+            self.canvas.create_rectangle(
+                cx - hw - 2, cy - hh - 2, cx + hw + 2, cy + hh + 2,
+                fill="#000000", outline="", stipple="gray50",
             )
-
-        # Eyes (blink occasionally)
-        blink_open = abs(math.sin(at * 1.3)) > 0.07
-        if blink_open:
-            for ex_off in (-2.5, 2.5):
-                self.canvas.create_oval(
-                    cx + ex_off - 2, cy - 3,
-                    cx + ex_off + 2, cy + 1,
-                    fill="#ff4400", outline="#ffaa00", width=1,
-                )
-                self.canvas.create_oval(
-                    cx + ex_off - 0.8, cy - 2,
-                    cx + ex_off + 0.8, cy,
-                    fill="#ffee00", outline="",
-                )
 
     # ------------------------------------------------------------------
     # Player rendering
