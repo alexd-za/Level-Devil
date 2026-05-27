@@ -1,7 +1,13 @@
 from __future__ import annotations
 import tkinter as tk
 import math
+import random as _rng
 from typing import Optional
+
+_STAR_POSITIONS: list[tuple[int, int]] = []
+_rng.seed(0xfa117)
+for _i in range(70):
+    _STAR_POSITIONS.append((_rng.randint(2, 698), _rng.randint(2, 698)))
 
 CANVAS_W = 700
 CANVAS_H = 700
@@ -94,6 +100,28 @@ class UIManager:
     def draw_scanlines(self) -> None:
         pass
 
+    def _draw_stars(self, tick: int) -> None:
+        for i, (sx, sy) in enumerate(_STAR_POSITIONS):
+            phase = (tick + i * 7) % 120
+            if phase < 100:
+                col = "#1e1e2e"
+            elif phase < 110:
+                col = "#aaaacc"
+            else:
+                col = "#ffffff"
+            self._r(sx, sy, sx + 1, sy + 1, fill=col, outline="")
+
+    def draw_starfield_raw(self, canvas: tk.Canvas, tick: int) -> None:
+        for i, (sx, sy) in enumerate(_STAR_POSITIONS):
+            phase = (tick + i * 7) % 120
+            if phase < 100:
+                col = "#1e1e2e"
+            elif phase < 110:
+                col = "#aaaacc"
+            else:
+                col = "#ffffff"
+            canvas.create_rectangle(sx, sy, sx + 1, sy + 1, fill=col, outline="")
+
     # ------------------------------------------------------------------
     # Main menu
     # ------------------------------------------------------------------
@@ -101,16 +129,11 @@ class UIManager:
     def draw_main_menu(self, blink: bool, tick: int) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self._draw_stars(tick)
 
         for bx, by, dx, dy in [(30,30,1,1),(670,30,-1,1),(30,670,1,-1),(670,670,-1,-1)]:
             self._l(bx, by, bx + dx * 26, by, fill=FG_DIM, width=1)
             self._l(bx, by, bx, by + dy * 26, fill=FG_DIM, width=1)
-
-        import random as _r
-        _r.seed(tick // 30)
-        for _ in range(18):
-            nx = _r.randint(35, 665); ny = _r.randint(35, 665)
-            self._r(nx, ny, nx + 1, ny + 1, fill=FG_DIM, outline="")
 
         self._t(CANVAS_W // 2, 158, "MAZE RUNNER",
                 font=("Courier", 48, "bold"), fill=FG_BRIGHT, anchor="center")
@@ -154,6 +177,7 @@ class UIManager:
     def draw_help(self) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self._draw_stars(0)
         self._r(38, 38, CANVAS_W - 38, CANVAS_H - 38, fill="", outline=FG_DIM, width=1)
 
         self._t(CANVAS_W // 2, 68, "FACILITY ORIENTATION GUIDE",
@@ -236,6 +260,7 @@ class UIManager:
     def draw_level_intro(self) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self._draw_stars(0)
         self._r(24, 24, CANVAS_W - 24, CANVAS_H - 24, fill="", outline=FG_DIM, width=1)
 
         visible = self._tw.visible_lines()
@@ -289,8 +314,17 @@ class UIManager:
 
         self._t(10, 8, f"SECTOR {level}",
                 font=("Courier", 11, "bold"), fill=ACCENT, anchor="nw")
+        import time as _t
+        if elapsed > 120:
+            t_col = ACCENT if int(_t.perf_counter() * 3) % 2 == 0 else "#660000"
+        elif elapsed > 90:
+            t_col = ORANGE
+        elif elapsed > 60:
+            t_col = YELLOW
+        else:
+            t_col = FG_MID
         self._t(CANVAS_W // 2, 8, time_str,
-                font=("Courier", 11), fill=FG_MID, anchor="n")
+                font=("Courier", 11, "bold" if elapsed > 90 else "normal"), fill=t_col, anchor="n")
         self._t(CANVAS_W - 10, 8, f"{score:07d}",
                 font=("Courier", 11), fill=FG_MID, anchor="ne")
         self._t(CANVAS_W - 10, 24, f"deaths: {deaths}",
@@ -343,6 +377,8 @@ class UIManager:
 
     def draw_death(self, fade: float) -> None:
         self.clear()
+        self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self._draw_stars(0)
         stipple = "" if fade > 0.7 else ("gray75" if fade > 0.4 else "gray50")
         self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="",
                 stipple=stipple if stipple else "")
@@ -376,6 +412,7 @@ class UIManager:
     def draw_level_complete(self, score_gained: int) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self._draw_stars(0)
         self._r(32, 32, CANVAS_W - 32, CANVAS_H - 32, fill="", outline=GREEN, width=1)
 
         visible = self._tw.visible_lines()
@@ -410,6 +447,7 @@ class UIManager:
     def draw_ending(self, tick: int) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self._draw_stars(tick // 2)
         border_col = ACCENT if tick % 8 < 4 else FG_DIM
         self._r(16, 16, CANVAS_W - 16, CANVAS_H - 16,
                 fill="", outline=border_col, width=2)
@@ -516,27 +554,30 @@ class UIManager:
         stipple = "" if alpha > 0.85 else ("gray75" if alpha > 0.5 else "gray50")
         base_kw = {"stipple": stipple} if stipple else {}
 
-        max_w = 280
-        panel_h = 46
-        px = 10
-        py = CANVAS_H - HUD_H - panel_h - 58
+        pw = 320
+        panel_h = 56
+        px = 8
+        py = CANVAS_H - HUD_H - panel_h - 62
 
-        self._r(px, py, px + max_w, py + panel_h,
+        self._r(px, py, px + pw, py + panel_h,
                 fill="#000000", outline="", **base_kw)
-        self._r(px + 2, py + 2, px + max_w - 2, py + panel_h - 2,
-                fill="#0a0000", outline="#6b1a00", width=1, **base_kw)
+        self._r(px + 4, py, px + 7, py + panel_h,
+                fill="#cc3300", outline="", **base_kw)
+        self._r(px + 7, py, px + pw, py + panel_h,
+                fill="#0c0400", outline="#441000", width=1, **base_kw)
+        self._l(px + 7, py + 18, px + pw - 2, py + 18,
+                fill="#331100", width=1)
 
-        hdr_col = "#cc4400" if alpha > 0.6 else "#552200"
-        self._t(px + max_w // 2, py + 10,
-                "[ FACILITY LOG ]",
-                font=("Courier", 8, "bold"), fill=hdr_col, anchor="center",
-                **({} if not stipple else {}))
+        hdr_col = "#ff5500" if alpha > 0.7 else "#882200"
+        self._t(px + 8 + (pw - 8) // 2, py + 9,
+                "◀  FACILITY LOG  ▶",
+                font=("Courier", 8, "bold"), fill=hdr_col, anchor="center")
 
-        msg_col = "#bb5500" if alpha > 0.6 else "#663300"
-        self._t(px + max_w // 2, py + 28,
+        msg_col = "#ee6600" if alpha > 0.7 else "#774400"
+        self._t(px + 14, py + 30,
                 msg,
-                font=("Courier", 8), fill=msg_col, anchor="center",
-                width=max_w - 8)
+                font=("Courier", 8), fill=msg_col, anchor="nw",
+                width=pw - 18)
 
     # ------------------------------------------------------------------
     # Leaderboard screen
@@ -545,6 +586,7 @@ class UIManager:
     def draw_leaderboard(self, scores: list) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self._draw_stars(0)
         self._r(32, 32, CANVAS_W - 32, CANVAS_H - 32, fill="", outline=YELLOW, width=1)
 
         self._t(CANVAS_W // 2, 62, "FACILITY RECORDS",
@@ -593,6 +635,49 @@ class UIManager:
     # ------------------------------------------------------------------
     # Overlays
     # ------------------------------------------------------------------
+
+    def draw_pause(self) -> None:
+        self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray50")
+        pw, ph = 340, 180
+        px = (CANVAS_W - pw) // 2
+        py = (CANVAS_H - ph) // 2
+        self._r(px, py, px + pw, py + ph, fill="#050508", outline=FG_DIM, width=1)
+        self._r(px + 2, py + 2, px + pw - 2, py + 4, fill=ACCENT, outline="")
+        self._t(CANVAS_W // 2, py + 26, "PAUSED",
+                font=("Courier", 22, "bold"), fill=FG_BRIGHT, anchor="center")
+        self._l(px + 20, py + 50, px + pw - 20, py + 50, fill=FG_DIM, width=1)
+        self._t(CANVAS_W // 2, py + 68, "P / ESC  — resume",
+                font=("Courier", 11), fill=FG_MID, anchor="center")
+        self._t(CANVAS_W // 2, py + 90, "R  — restart level",
+                font=("Courier", 11), fill=FG_MID, anchor="center")
+        self._t(CANVAS_W // 2, py + 112, "M  — main menu",
+                font=("Courier", 11), fill=FG_MID, anchor="center")
+        self._t(CANVAS_W // 2, py + 148,
+                "The facility thanks you for your patience.",
+                font=("Courier", 9, "italic"), fill=FG_DIM, anchor="center")
+
+    def draw_admin_panel(self, level: int, noclip: bool, speed: bool) -> None:
+        pw, ph = 260, 180
+        px, py = CANVAS_W - pw - 8, HUD_H + 8
+        self._r(px, py, px + pw, py + ph, fill="#000800", outline="#00cc44", width=1)
+        self._r(px + 2, py + 2, px + pw - 2, py + 4, fill="#00cc44", outline="")
+        self._t(px + pw // 2, py + 14, "▶  ADMIN MODE  ◀",
+                font=("Courier", 9, "bold"), fill="#00ff44", anchor="center")
+        self._l(px + 8, py + 24, px + pw - 8, py + 24, fill="#004400", width=1)
+        lines = [
+            (f"SECTOR  : {level}", "#00cc44"),
+            (f"NOCLIP  : {'ON' if noclip else 'OFF'}  [N]", "#00ff44" if noclip else "#337733"),
+            (f"SPEED   : {'ON' if speed else 'OFF'}  [B]", "#00ff44" if speed else "#337733"),
+            ("KILL ENEMIES   [K]", "#cc4400"),
+            ("GET ALL DOCS   [C]", "#ccaa00"),
+            ("JUMP SECTOR  [1-5]", "#0088cc"),
+        ]
+        cy = py + 36
+        for txt, col in lines:
+            self._t(px + 12, cy, txt, font=("Courier", 9), fill=col, anchor="nw")
+            cy += 20
+        self._t(px + pw // 2, py + ph - 10,
+                "` to close", font=("Courier", 8), fill="#224422", anchor="center")
 
     def draw_fade(self, alpha: float) -> None:
         if alpha <= 0.0:
