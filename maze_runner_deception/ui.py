@@ -1,7 +1,3 @@
-"""
-ui.py — All canvas-based UI: menus, HUD, overlays, typewriter, help.
-"""
-
 from __future__ import annotations
 import tkinter as tk
 import math
@@ -9,29 +5,24 @@ from typing import Optional
 
 CANVAS_W = 700
 CANVAS_H = 700
+HUD_H    = 42
 
-# Palette
 BG       = "#000000"
-FG_DARK  = "#222222"
-FG_DIM   = "#444444"
-FG_MID   = "#888888"
-FG_MAIN  = "#cccccc"
+FG_DARK  = "#1a1a1a"
+FG_DIM   = "#3a3a3a"
+FG_MID   = "#777777"
+FG_MAIN  = "#bbbbbb"
 FG_BRIGHT= "#ffffff"
 ACCENT   = "#ff3333"
 GREEN    = "#00ff88"
 YELLOW   = "#ffcc00"
 CYAN     = "#00ffcc"
 PURPLE   = "#cc00ff"
+ORANGE   = "#ff8800"
 
-
-# ---------------------------------------------------------------------------
-# Typewriter text component
-# ---------------------------------------------------------------------------
 
 class TypewriterText:
-    """Animates lines of text as if being typed."""
-
-    CHARS_PER_SEC = 42.0
+    CHARS_PER_SEC = 44.0
 
     def __init__(self, lines: list[str]):
         self.lines    = lines
@@ -71,21 +62,18 @@ class TypewriterText:
         return result
 
 
-# ---------------------------------------------------------------------------
-# UIManager
-# ---------------------------------------------------------------------------
-
 class UIManager:
     def __init__(self, canvas: tk.Canvas):
         self.canvas = canvas
-        self._ids:  list[int] = []
-        self._tw    = TypewriterText([])
-        self._scanline_ids: list[int] = []
+        self._ids: list[int] = []
+        self._tw   = TypewriterText([])
 
     def clear(self) -> None:
         for cid in self._ids:
-            try: self.canvas.delete(cid)
-            except Exception: pass
+            try:
+                self.canvas.delete(cid)
+            except Exception:
+                pass
         self._ids.clear()
 
     def _t(self, x, y, text, **kw) -> int:
@@ -103,139 +91,142 @@ class UIManager:
         self._ids.append(cid)
         return cid
 
-    # ------------------------------------------------------------------
-    # Scanline overlay — call once per frame AFTER maze render
-    # ------------------------------------------------------------------
     def draw_scanlines(self) -> None:
-        for y in range(0, CANVAS_H, 4):
+        for y in range(HUD_H, CANVAS_H, 4):
             cid = self.canvas.create_line(
-                0, y, CANVAS_W, y,
-                fill="#000000", width=1, stipple="gray25",
-            )
+                0, y, CANVAS_W, y, fill="#000000", width=1, stipple="gray25")
             self._ids.append(cid)
 
     # ------------------------------------------------------------------
     # Main menu
     # ------------------------------------------------------------------
+
     def draw_main_menu(self, blink: bool, tick: int) -> None:
         self.clear()
-
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
 
-        # corner brackets
-        bracket_col = FG_DIM
         for bx, by, dx, dy in [(30,30,1,1),(670,30,-1,1),(30,670,1,-1),(670,670,-1,-1)]:
-            self._l(bx, by, bx+dx*24, by, fill=bracket_col, width=1)
-            self._l(bx, by, bx, by+dy*24, fill=bracket_col, width=1)
+            self._l(bx, by, bx + dx * 26, by, fill=FG_DIM, width=1)
+            self._l(bx, by, bx, by + dy * 26, fill=FG_DIM, width=1)
 
-        self._t(CANVAS_W//2, 175, "MAZE RUNNER",
-                font=("Courier", 46, "bold"), fill=FG_BRIGHT, anchor="center")
-        self._t(CANVAS_W//2, 228, "D  E  C  E  P  T  I  O  N",
+        import random as _r
+        _r.seed(tick // 30)
+        for _ in range(18):
+            nx = _r.randint(35, 665); ny = _r.randint(35, 665)
+            self._r(nx, ny, nx + 1, ny + 1, fill=FG_DIM, outline="")
+
+        self._t(CANVAS_W // 2, 158, "MAZE RUNNER",
+                font=("Courier", 48, "bold"), fill=FG_BRIGHT, anchor="center")
+        self._t(CANVAS_W // 2, 214, "D  E  C  E  P  T  I  O  N",
                 font=("Courier", 16), fill=ACCENT, anchor="center")
 
-        # separator line
-        self._l(120, 260, 580, 260, fill=FG_DIM, width=1)
+        self._l(100, 248, 600, 248, fill=FG_DIM, width=1)
 
-        self._t(CANVAS_W//2, 300,
-                "Subject 47, escape the facility.",
-                font=("Courier", 13), fill=FG_MID, anchor="center")
-        self._t(CANVAS_W//2, 322, "Or try.",
-                font=("Courier", 13, "italic"), fill=FG_DIM, anchor="center")
+        self._t(CANVAS_W // 2, 280, "Subject 47 — Day 23",
+                font=("Courier", 12), fill=FG_MID, anchor="center")
+        self._t(CANVAS_W // 2, 300, "Your cooperation is appreciated.",
+                font=("Courier", 12), fill=FG_MID, anchor="center")
+        self._t(CANVAS_W // 2, 320, "Your escape attempts are also appreciated.",
+                font=("Courier", 11, "italic"), fill=FG_DIM, anchor="center")
+        self._t(CANVAS_W // 2, 338, "(They are very amusing.)",
+                font=("Courier", 10, "italic"), fill=FG_DIM, anchor="center")
 
-        if blink:
-            self._t(CANVAS_W//2, 410, "[ ENTER  TO  BEGIN ]",
-                    font=("Courier", 14, "bold"), fill=YELLOW, anchor="center")
-        else:
-            self._t(CANVAS_W//2, 410, "[ ENTER  TO  BEGIN ]",
-                    font=("Courier", 14, "bold"), fill=FG_DIM, anchor="center")
+        enter_col = YELLOW if blink else FG_DIM
+        self._t(CANVAS_W // 2, 408, "[ ENTER  TO  BEGIN ]",
+                font=("Courier", 14, "bold"), fill=enter_col, anchor="center")
 
-        self._t(CANVAS_W//2, 490, "H — help",
+        self._l(100, 448, 600, 448, fill=FG_DIM, width=1)
+
+        self._t(CANVAS_W // 2, 472,
+                "WASD / Arrows — move   |   R — restart   |   ESC — menu",
+                font=("Courier", 10), fill=FG_DIM, anchor="center")
+        self._t(CANVAS_W // 2, 492, "H — help",
                 font=("Courier", 10), fill=FG_DIM, anchor="center")
 
-        self._t(CANVAS_W//2, 530,
-                "WASD / Arrows  ·  R restart  ·  ESC menu",
-                font=("Courier", 10), fill=FG_DIM, anchor="center")
-
-        # version tag
-        v_col = FG_DIM if tick % 120 < 100 else FG_MID
-        self._t(CANVAS_W - 10, CANVAS_H - 14,
-                "FACILITY OS  v4.7",
+        v_col = FG_DIM if tick % 120 < 95 else FG_MID
+        self._t(CANVAS_W - 10, CANVAS_H - 12, "FACILITY OS  v7.3",
                 font=("Courier", 9), fill=v_col, anchor="se")
-
-        self._t(CANVAS_W//2, CANVAS_H - 14,
+        self._t(CANVAS_W // 2, CANVAS_H - 12,
                 "The facility assumes no liability for psychological distress.",
                 font=("Courier", 9), fill=FG_DIM, anchor="s")
 
     # ------------------------------------------------------------------
     # Help screen
     # ------------------------------------------------------------------
+
     def draw_help(self) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
-        self._r(40, 40, CANVAS_W-40, CANVAS_H-40, fill="", outline=FG_DIM, width=1)
+        self._r(38, 38, CANVAS_W - 38, CANVAS_H - 38, fill="", outline=FG_DIM, width=1)
 
-        self._t(CANVAS_W//2, 80, "FACILITY ORIENTATION GUIDE",
+        self._t(CANVAS_W // 2, 68, "FACILITY ORIENTATION GUIDE",
                 font=("Courier", 16, "bold"), fill=ACCENT, anchor="center")
-        self._t(CANVAS_W//2, 104,
+        self._t(CANVAS_W // 2, 90,
                 "The facility provides this guide as a courtesy.",
                 font=("Courier", 10, "italic"), fill=FG_DIM, anchor="center")
-        self._t(CANVAS_W//2, 118,
+        self._t(CANVAS_W // 2, 105,
                 "The facility accepts no responsibility for its accuracy.",
                 font=("Courier", 10, "italic"), fill=FG_DIM, anchor="center")
 
-        self._l(80, 138, CANVAS_W-80, 138, fill=FG_DIM, width=1)
+        self._l(80, 124, CANVAS_W - 80, 124, fill=FG_DIM, width=1)
 
         controls = [
             ("MOVEMENT",   "WASD  or  Arrow Keys"),
-            ("RESTART",    "R"),
+            ("RESTART",    "R  or  ENTER (death screen)"),
             ("MAIN MENU",  "ESC"),
-            ("THIS GUIDE", "H  (from menu)"),
+            ("THIS GUIDE", "H  (from main menu)"),
         ]
-        cy = 165
-        for label, key in controls:
-            self._t(160, cy, label, font=("Courier", 11, "bold"), fill=FG_MID, anchor="w")
-            self._t(420, cy, key,   font=("Courier", 11),         fill=FG_BRIGHT, anchor="w")
+        cy = 144
+        for label, binding in controls:
+            self._t(148, cy, label,   font=("Courier", 11, "bold"), fill=FG_MID,    anchor="w")
+            self._t(388, cy, binding, font=("Courier", 11),          fill=FG_BRIGHT, anchor="w")
             cy += 28
 
-        self._l(80, cy+5, CANVAS_W-80, cy+5, fill=FG_DIM, width=1)
-        cy += 25
+        self._l(80, cy + 2, CANVAS_W - 80, cy + 2, fill=FG_DIM, width=1)
+        cy += 22
 
-        self._t(CANVAS_W//2, cy, "OBJECTIVE",
+        self._t(CANVAS_W // 2, cy, "OBJECTIVE",
                 font=("Courier", 12, "bold"), fill=GREEN, anchor="center")
         cy += 26
-        self._t(CANVAS_W//2, cy,
-                "Reach the green exit tile to advance.",
-                font=("Courier", 11), fill=FG_MAIN, anchor="center")
-        cy += 22
-        self._t(CANVAS_W//2, cy,
-                "There are 5 levels. Each has one trap.",
-                font=("Courier", 11), fill=FG_MAIN, anchor="center")
-        cy += 22
-        self._t(CANVAS_W//2, cy,
-                "The facility guarantees the traps are clearly signposted.",
-                font=("Courier", 11, "italic"), fill=FG_DIM, anchor="center")
+        tips = [
+            "Reach the green EXIT tile in each of 5 sectors.",
+            "Each sector introduces one new deception.",
+            "Glowing yellow icons are collectible documents.",
+            "Walk into suspicious walls. Some are passable.",
+            "",
+            "The facility guarantees the rules are fair.",
+            "(This guarantee is void.)",
+        ]
+        for tip in tips:
+            if not tip:
+                cy += 10
+                continue
+            col   = FG_DIM if tip.startswith("(") else FG_MAIN
+            style = "italic" if tip.startswith("(") else "normal"
+            self._t(CANVAS_W // 2, cy, tip,
+                    font=("Courier", 10, style), fill=col, anchor="center")
+            cy += 19
 
-        self._l(80, cy+20, CANVAS_W-80, cy+20, fill=FG_DIM, width=1)
-        cy += 40
-
-        self._t(CANVAS_W//2, cy, "SCORING",
-                font=("Courier", 12, "bold"), fill=YELLOW, anchor="center")
-        cy += 26
-        self._t(CANVAS_W//2, cy,
-                "Score = (5000 × level) + time bonus − (200 × deaths)",
-                font=("Courier", 10), fill=FG_MID, anchor="center")
+        self._l(80, cy + 2, CANVAS_W - 80, cy + 2, fill=FG_DIM, width=1)
         cy += 20
-        self._t(CANVAS_W//2, cy,
-                "Dying is suboptimal.",
+
+        self._t(CANVAS_W // 2, cy, "SCORING",
+                font=("Courier", 12, "bold"), fill=YELLOW, anchor="center")
+        cy += 24
+        self._t(CANVAS_W // 2, cy,
+                "Score = (6000 × sector) + time bonus − (250 × deaths)",
+                font=("Courier", 10), fill=FG_MID, anchor="center")
+        cy += 18
+        self._t(CANVAS_W // 2, cy, "Dying is suboptimal.",
                 font=("Courier", 10, "italic"), fill=FG_DIM, anchor="center")
 
-        self._t(CANVAS_W//2, CANVAS_H - 55,
-                "[ ESC to return ]",
+        self._t(CANVAS_W // 2, CANVAS_H - 56, "[ ESC or H to return ]",
                 font=("Courier", 11), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
-    # Level intro
+    # Intro / death typewriter screen
     # ------------------------------------------------------------------
+
     def start_intro(self, lines: list[str]) -> None:
         self._tw.reset(lines)
 
@@ -248,188 +239,236 @@ class UIManager:
     def draw_level_intro(self, countdown: float) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
-        self._r(25, 25, CANVAS_W-25, CANVAS_H-25, fill="", outline=FG_DIM, width=1)
+        self._r(24, 24, CANVAS_W - 24, CANVAS_H - 24, fill="", outline=FG_DIM, width=1)
 
         visible = self._tw.visible_lines()
-        cy = 240
+        cy = 215
         for i, line in enumerate(visible):
-            if not line and i != 0:
+            if not line:
                 cy += 14
                 continue
             if i == 0:
-                color, size = ACCENT, 17
+                col, size, style = ACCENT, 18, "bold"
+            elif line.startswith("[ORACLE") or line.startswith("[FRAGMENT"):
+                col, size, style = PURPLE, 10, "italic"
+            elif line.startswith("("):
+                col, size, style = FG_DIM, 10, "italic"
             else:
-                color, size = FG_MAIN, 12
-            if line:
-                self._t(CANVAS_W//2, cy, line,
-                        font=("Courier", size, "bold" if i == 0 else "normal"),
-                        fill=color, anchor="center")
-            cy += size + 10
+                col, size, style = FG_MAIN, 12, "normal"
+            self._t(CANVAS_W // 2, cy, line,
+                    font=("Courier", size, style), fill=col, anchor="center")
+            cy += size + 11
 
-        # progress bar
         bar_w = CANVAS_W - 120
-        prog  = max(0.0, (3.0 - countdown) / 3.0)
-        self._r(60, CANVAS_H-75, 60 + bar_w, CANVAS_H-63, fill="", outline=FG_DIM)
+        prog  = max(0.0, (3.5 - countdown) / 3.5)
+        self._r(60, CANVAS_H - 78, 60 + bar_w, CANVAS_H - 66, fill="", outline=FG_DIM)
         if prog > 0:
-            self._r(60, CANVAS_H-75, 60 + int(bar_w*prog), CANVAS_H-63,
+            self._r(60, CANVAS_H - 78, 60 + int(bar_w * prog), CANVAS_H - 66,
                     fill=ACCENT, outline="")
-        self._t(CANVAS_W//2, CANVAS_H-48,
-                f"Commencing in {max(0.0,countdown):.1f}s  ·  ENTER to skip",
+        self._t(CANVAS_W // 2, CANVAS_H - 50,
+                f"Commencing in {max(0.0, countdown):.1f}s  ·  ENTER to skip",
                 font=("Courier", 10), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
-    # HUD  (drawn every game frame)
+    # HUD
     # ------------------------------------------------------------------
+
     def draw_hud(self, level: int, elapsed: float, score: int,
-                 deaths: int, effect_msg: str, hint: str,
-                 invert_remaining: float) -> None:
+                 deaths: int, hint: str,
+                 invert_remaining: float, dark_remaining: float,
+                 notes_found: int) -> None:
         self.clear()
 
         m, s = divmod(int(elapsed), 60)
         time_str = f"{m:02d}:{s:02d}"
 
-        # top bar background
-        self._r(0, 0, CANVAS_W, 38, fill="#0a0a0a", outline=FG_DIM, width=1)
+        self._r(0, 0, CANVAS_W, HUD_H, fill="#060608", outline="")
+        self._l(0, HUD_H - 1, CANVAS_W, HUD_H - 1, fill=FG_DIM, width=1)
 
-        self._t(12, 10, f"LVL {level}",
+        self._t(10, 8, f"SECTOR {level}",
                 font=("Courier", 11, "bold"), fill=ACCENT, anchor="nw")
-        self._t(CANVAS_W//2, 10, time_str,
+        self._t(CANVAS_W // 2, 8, time_str,
                 font=("Courier", 11), fill=FG_MID, anchor="n")
-        self._t(CANVAS_W-12, 10, f"{score:06d}",
+        self._t(CANVAS_W - 10, 8, f"{score:07d}",
                 font=("Courier", 11), fill=FG_MID, anchor="ne")
-        self._t(CANVAS_W-12, 24, f"✕{deaths}",
+        self._t(CANVAS_W - 10, 24, f"deaths: {deaths}",
                 font=("Courier", 9), fill=FG_DIM, anchor="ne")
 
-        # invert countdown
+        if notes_found > 0:
+            self._t(12, 26, f"docs: {notes_found}",
+                    font=("Courier", 9), fill="#886600", anchor="nw")
+
         if invert_remaining > 0:
-            pulse = "#ffcc00" if int(invert_remaining*4) % 2 == 0 else "#ff8800"
-            self._t(CANVAS_W//2, CANVAS_H-44,
-                    f"⚠ CONTROLS INVERTED  [{invert_remaining:.1f}s] ⚠",
+            pulse = YELLOW if int(invert_remaining * 4) % 2 == 0 else ORANGE
+            self._t(CANVAS_W // 2, CANVAS_H - 48,
+                    f"⚠  CONTROLS INVERTED  [{invert_remaining:.1f}s]  ⚠",
                     font=("Courier", 12, "bold"), fill=pulse, anchor="center")
 
-        # narrator hint
+        if dark_remaining > 0:
+            self._t(CANVAS_W // 2, CANVAS_H - 68,
+                    f"LIGHTS OUT  [{dark_remaining:.1f}s]",
+                    font=("Courier", 11, "bold"), fill=PURPLE, anchor="center")
+
         if hint:
-            self._t(CANVAS_W//2, CANVAS_H-18, hint,
+            self._t(CANVAS_W // 2, CANVAS_H - 16, hint,
                     font=("Courier", 9, "italic"), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
     # Death overlay
     # ------------------------------------------------------------------
-    def draw_death(self, lines: list[str], fade: float) -> None:
-        """fade: 0→1 how opaque the overlay is."""
+
+    def draw_death(self, fade: float) -> None:
         self.clear()
         stipple = "" if fade > 0.7 else ("gray75" if fade > 0.4 else "gray50")
         self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="",
                 stipple=stipple if stipple else "")
 
-        cy = 290
         visible = self._tw.visible_lines()
+        cy = 265
         for i, line in enumerate(visible):
             if not line:
                 cy += 12
                 continue
-            col  = ACCENT if i == 0 else FG_MID
-            size = 16 if i == 0 else 11
-            self._t(CANVAS_W//2, cy, line,
-                    font=("Courier", size, "bold" if i == 0 else "normal"),
-                    fill=col, anchor="center")
+            if i == 0:
+                col, size = ACCENT, 17
+            elif any(w in line for w in ("SECURITY", "CONTACT", "ORACLE", "UNIT")):
+                col, size = ORANGE, 11
+            else:
+                col, size = FG_MID, 11
+            style = "bold" if i == 0 else "normal"
+            self._t(CANVAS_W // 2, cy, line,
+                    font=("Courier", size, style), fill=col, anchor="center")
             cy += size + 12
 
         if self._tw.is_done:
-            self._t(CANVAS_W//2, cy + 24, "[ R to retry  ·  ESC for menu ]",
+            self._t(CANVAS_W // 2, cy + 26,
+                    "[ ENTER / R — retry   ·   ESC — main menu ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
     # Level complete
     # ------------------------------------------------------------------
+
     def draw_level_complete(self, score_gained: int) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
-        self._r(35, 35, CANVAS_W-35, CANVAS_H-35, fill="", outline=GREEN, width=1)
+        self._r(32, 32, CANVAS_W - 32, CANVAS_H - 32, fill="", outline=GREEN, width=1)
 
         visible = self._tw.visible_lines()
-        cy = 210
+        cy = 190
         for i, line in enumerate(visible):
             if not line:
-                cy += 16
+                cy += 18
                 continue
-            if "BREACH" in line or "DETECTED" in line or i == 0:
-                color, size = GREEN if i == 0 else ACCENT, 18
+            if i == 0:
+                col, size = GREEN, 19
+            elif "BREACH" in line or "DETECTED" in line:
+                col, size = ACCENT, 16
+            elif line.startswith("("):
+                col, size = FG_DIM, 10
             else:
-                color, size = FG_MAIN, 12
-            self._t(CANVAS_W//2, cy, line,
-                    font=("Courier", size, "bold" if size >= 16 else "normal"),
-                    fill=color, anchor="center")
+                col, size = FG_MAIN, 12
+            style = "bold" if size >= 16 else ("italic" if line.startswith("(") else "normal")
+            self._t(CANVAS_W // 2, cy, line,
+                    font=("Courier", size, style), fill=col, anchor="center")
             cy += size + 14
 
         if self._tw.is_done:
-            self._t(CANVAS_W//2, cy+20, f"+ {score_gained:,} pts",
+            self._t(CANVAS_W // 2, cy + 16, f"+ {score_gained:,} pts",
                     font=("Courier", 14, "bold"), fill=YELLOW, anchor="center")
-            self._t(CANVAS_W//2, CANVAS_H-55, "[ ENTER to continue ]",
+            self._t(CANVAS_W // 2, CANVAS_H - 55, "[ ENTER to continue ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
     # Ending screen
     # ------------------------------------------------------------------
+
     def draw_ending(self, tick: int) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
-
         border_col = ACCENT if tick % 8 < 4 else FG_DIM
-        self._r(18, 18, CANVAS_W-18, CANVAS_H-18, fill="", outline=border_col, width=2)
-        self._r(22, 22, CANVAS_W-22, CANVAS_H-22, fill="", outline=FG_DIM, width=1)
+        self._r(16, 16, CANVAS_W - 16, CANVAS_H - 16,
+                fill="", outline=border_col, width=2)
+        self._r(20, 20, CANVAS_W - 20, CANVAS_H - 20,
+                fill="", outline=FG_DIM, width=1)
 
         visible = self._tw.visible_lines()
-        cy = 145
+        cy = 44
         for i, line in enumerate(visible):
             if not line:
-                cy += 20
+                cy += 14
                 continue
             if "BREACH" in line or "DETECTED" in line:
-                col, size = ACCENT, 19
+                col, size = ACCENT, 15
             elif i == 0:
-                col, size = ACCENT, 16
-            elif "Thank you" in line or "cooperation" in line:
-                col, size = YELLOW, 13
-            elif "miss" in line.lower() or "will not" in line.lower():
-                col, size = FG_DIM, 11
-            elif any(x in line for x in ["obedience","measured","anticipated"]):
-                col, size = FG_MID, 11
+                col, size = ACCENT, 13
+            elif "Group D" in line or "forever" in line:
+                col, size = PURPLE, 12
+            elif "See you" in line or "tomorrow" in line:
+                col, size = ORANGE, 12
+            elif line.startswith("(") and ")" in line:
+                col, size = FG_DIM, 9
+            elif "chose" in line.lower() or "consent" in line.lower():
+                col, size = YELLOW, 11
+            elif "not a lie" in line:
+                col, size = GREEN, 10
+            elif line.startswith("[LOADING]"):
+                col, size = FG_DIM, 10
             else:
-                col, size = FG_MID, 12
-            self._t(CANVAS_W//2, cy, line,
-                    font=("Courier", size, "bold" if size >= 16 else "normal"),
-                    fill=col, anchor="center")
-            cy += size + 14
+                col, size = FG_MID, 10
+            style = "italic" if line.startswith("(") else ("bold" if size >= 14 else "normal")
+            self._t(CANVAS_W // 2, cy, line,
+                    font=("Courier", size, style), fill=col, anchor="center")
+            cy += size + 8
 
         if self._tw.is_done:
-            self._t(CANVAS_W//2, CANVAS_H-55, "[ ENTER for main menu ]",
+            self._t(CANVAS_W // 2, CANVAS_H - 40, "[ ENTER — main menu ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
-    # Fade overlay  (call after rendering game world)
+    # Note popup
     # ------------------------------------------------------------------
+
+    def draw_note_popup(self, lines: list[str], timer: float) -> None:
+        alpha    = min(1.0, timer / 0.4) if timer > 5.6 else min(1.0, timer / 1.0)
+        panel_h  = 20 + len(lines) * 15 + 10
+        py       = CANVAS_H - panel_h - 52
+        stipple  = "" if alpha > 0.85 else ("gray75" if alpha > 0.5 else "gray50")
+        base_kw  = {"stipple": stipple} if stipple else {}
+
+        self._r(42, py - 2, CANVAS_W - 42, py + panel_h + 2,
+                fill="#000000", outline="", **base_kw)
+        self._r(44, py, CANVAS_W - 44, py + panel_h,
+                fill="#070705", outline=YELLOW, width=1, **base_kw)
+
+        hdr_col = YELLOW if alpha > 0.6 else "#887700"
+        self._t(CANVAS_W // 2, py + 10,
+                "▶  CLASSIFIED DOCUMENT RETRIEVED  ◀",
+                font=("Courier", 9, "bold"), fill=hdr_col, anchor="center")
+
+        for i, line in enumerate(lines):
+            col  = YELLOW if line.startswith("[") else (FG_DIM if line == "" else FG_MAIN)
+            self._t(CANVAS_W // 2, py + 24 + i * 15, line,
+                    font=("Courier", 9), fill=col, anchor="center")
+
+    # ------------------------------------------------------------------
+    # Overlays
+    # ------------------------------------------------------------------
+
     def draw_fade(self, alpha: float) -> None:
-        """alpha 0=transparent → 1=solid black"""
         if alpha <= 0.0:
             return
         if alpha > 0.85:
             self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="")
         elif alpha > 0.60:
-            self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="",
-                    stipple="gray75")
+            self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray75")
         elif alpha > 0.35:
-            self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="",
-                    stipple="gray50")
+            self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray50")
         else:
-            self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="",
-                    stipple="gray25")
+            self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray25")
 
-    # ------------------------------------------------------------------
-    # Cyan invert flash
-    # ------------------------------------------------------------------
     def draw_invert_flash(self, intensity: float) -> None:
-        """Brief cyan tint when controls invert. intensity 0-1."""
-        if intensity <= 0: return
+        if intensity <= 0:
+            return
         sp = "gray25" if intensity < 0.5 else "gray50"
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=CYAN, outline="", stipple=sp)

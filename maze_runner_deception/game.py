@@ -1,7 +1,3 @@
-"""
-game.py — Game loop, particles, transitions, collision, rendering.
-"""
-
 from __future__ import annotations
 import tkinter as tk
 import time
@@ -11,25 +7,81 @@ from typing import Optional, Callable
 from dataclasses import dataclass, field
 
 from entities import (
-    Player, Wall, Exit, FakeExit, TriggerTile, MovingExit,
-    TILE_SIZE, PLAYER_SIZE, PLAYER_GAP,
+    Player, Wall, FakeWall, Exit, FakeExit, TriggerTile, MovingExit,
+    Note, Enemy, TILE_SIZE, PLAYER_SIZE, PLAYER_GAP,
 )
 from levels import (
     Level, make_level,
-    LEVEL_INTROS, LEVEL_COMPLETIONS, LEVEL_HINTS,
+    LEVEL_INTROS, LEVEL_COMPLETIONS, LEVEL_HINTS, LEVEL_ENDING,
     INTRO_TEXT,
 )
-from ui import UIManager, CANVAS_W, CANVAS_H, BG
+from ui import UIManager, CANVAS_W, CANVAS_H, BG, HUD_H
 
-FRAME_MS     = 16          # ~62.5 fps
+FRAME_MS     = 16
 TOTAL_LEVELS = 5
 
-SCORE_BASE       = 5000
-SCORE_TIME_BONUS = 100
-SCORE_DEATH_PEN  = 200
+SCORE_BASE       = 6000
+SCORE_TIME_BONUS = 120
+SCORE_DEATH_PEN  = 250
 
 SHAKE_FRAMES   = 10
 SHAKE_STRENGTH = 6
+
+DARK_RADIUS    = 5.5   # tiles visible when darkness is active
+
+
+# ---------------------------------------------------------------------------
+# Camera
+# ---------------------------------------------------------------------------
+
+class Camera:
+    LERP_SPD = 9.0
+
+    def __init__(self):
+        self._x: float = 0.0
+        self._y: float = 0.0
+        self._map_w: int = 0
+        self._map_h: int = 0
+
+    def set_map(self, map_w_px: int, map_h_px: int) -> None:
+        self._map_w = map_w_px
+        self._map_h = map_h_px
+
+    def snap(self, px: float, py: float) -> None:
+        self._x = self._clamp_x(px - CANVAS_W / 2)
+        self._y = self._clamp_y(py - (CANVAS_H - HUD_H) / 2)
+
+    def follow(self, px: float, py: float, dt: float) -> None:
+        tx = self._clamp_x(px - CANVAS_W / 2)
+        ty = self._clamp_y(py - (CANVAS_H - HUD_H) / 2)
+        self._x += (tx - self._x) * self.LERP_SPD * dt
+        self._y += (ty - self._y) * self.LERP_SPD * dt
+
+    def _clamp_x(self, x: float) -> float:
+        if self._map_w <= CANVAS_W:
+            return -(CANVAS_W - self._map_w) / 2
+        return max(0.0, min(x, self._map_w - CANVAS_W))
+
+    def _clamp_y(self, y: float) -> float:
+        h = CANVAS_H - HUD_H
+        if self._map_h <= h:
+            return -(h - self._map_h) / 2
+        return max(0.0, min(y, self._map_h - h))
+
+    @property
+    def ox(self) -> int:
+        return int(-self._x)
+
+    @property
+    def oy(self) -> int:
+        return int(-self._y) + HUD_H
+
+    def visible_tile_range(self) -> tuple[int, int, int, int]:
+        cs = max(0, int(self._x / TILE_SIZE) - 1)
+        rs = max(0, int(self._y / TILE_SIZE) - 1)
+        ce = cs + int(CANVAS_W / TILE_SIZE) + 4
+        re = rs + int((CANVAS_H - HUD_H) / TILE_SIZE) + 4
+        return cs, rs, ce, re
 
 
 # ---------------------------------------------------------------------------
@@ -38,32 +90,28 @@ SHAKE_STRENGTH = 6
 
 @dataclass
 class Particle:
-    x:        float
-    y:        float
-    vx:       float
-    vy:       float
-    life:     float
-    max_life: float
-    size:     float
-    color:    str
+    x: float; y: float
+    vx: float; vy: float
+    life: float; max_life: float
+    size: float; color: str
 
 
 class ParticleSystem:
     def __init__(self):
         self.particles: list[Particle] = []
 
-    def burst(self, px: float, py: float, color: str = "#ff3333",
-              count: int = 14) -> None:
+    def burst(self, px: float, py: float,
+              color: str = "#ff3333", count: int = 16) -> None:
         for _ in range(count):
             angle = random.uniform(0, math.tau)
-            speed = random.uniform(50, 160)
-            ml    = random.uniform(0.35, 0.65)
+            speed = random.uniform(55, 175)
+            ml    = random.uniform(0.3, 0.7)
             self.particles.append(Particle(
                 x=px, y=py,
                 vx=math.cos(angle) * speed,
                 vy=math.sin(angle) * speed,
                 life=ml, max_life=ml,
-                size=random.uniform(2.5, 5.5),
+                size=random.uniform(2.0, 5.0),
                 color=color,
             ))
 
@@ -71,20 +119,23 @@ class ParticleSystem:
         for p in self.particles:
             p.x  += p.vx * dt
             p.y  += p.vy * dt
-            p.vy += 220 * dt     # gravity
-            p.vx *= 0.96         # drag
+            p.vy += 240 * dt
+            p.vx *= 0.95
             p.life -= dt
         self.particles = [p for p in self.particles if p.life > 0]
 
     def render(self, canvas: tk.Canvas) -> None:
         for p in self.particles:
-            a = max(0.0, p.life / p.max_life)
-            r = int(255 * a)
+            a  = max(0.0, p.life / p.max_life)
+            s  = p.size * a
+            # fade to black using base color lightness
             try:
-                col = f"#{r:02x}{0:02x}{0:02x}"
+                r = int(int(p.color[1:3], 16) * a)
+                g = int(int(p.color[3:5], 16) * a)
+                b = int(int(p.color[5:7], 16) * a)
+                col = f"#{r:02x}{g:02x}{b:02x}"
             except Exception:
-                col = "#ff0000"
-            s = p.size * a
+                col = p.color
             canvas.create_rectangle(
                 p.x - s, p.y - s, p.x + s, p.y + s,
                 fill=col, outline="",
@@ -96,13 +147,13 @@ class ParticleSystem:
 # ---------------------------------------------------------------------------
 
 class FadeTransition:
-    SPEED = 3.5   # full cycle in 1/SPEED seconds per half
+    SPEED = 3.5
 
     def __init__(self):
-        self.alpha     = 0.0
-        self._dir      = 0       # 0=idle, 1=fade-out, -1=fade-in
+        self.alpha    = 0.0
+        self._dir     = 0
         self._callback: Optional[Callable] = None
-        self._called   = False
+        self._called  = False
 
     @property
     def active(self) -> bool:
@@ -134,13 +185,13 @@ class FadeTransition:
 # ---------------------------------------------------------------------------
 
 class GS:
-    MENU        = "menu"
-    HELP        = "help"
-    INTRO       = "intro"
-    PLAYING     = "playing"
-    DEAD        = "dead"
-    LEVEL_DONE  = "level_done"
-    ENDING      = "ending"
+    MENU       = "menu"
+    HELP       = "help"
+    INTRO      = "intro"
+    PLAYING    = "playing"
+    DEAD       = "dead"
+    LEVEL_DONE = "level_done"
+    ENDING     = "ending"
 
 
 # ---------------------------------------------------------------------------
@@ -152,48 +203,45 @@ class GameController:
         self.root   = root
         self.canvas = canvas
         self.ui     = UIManager(canvas)
+
         self.particles = ParticleSystem()
         self.fade      = FadeTransition()
+        self.camera    = Camera()
 
         self._keys: set[str] = set()
         self._bind_keys()
 
-        # global counters
         self.total_score  = 0
         self.total_deaths = 0
         self.current_lvl  = 1
 
-        # runtime
-        self.state:  str            = GS.MENU
-        self.level:  Optional[Level]  = None
+        self.state:  str             = GS.MENU
+        self.level:  Optional[Level] = None
         self.player: Optional[Player] = None
 
-        self._level_timer   = 0.0
-        self._intro_timer   = 3.0
-        self._death_timer   = 0.0
-        self._done_timer    = 0.0
-        self._ending_tick   = 0
-        self._level_score   = 0
+        self._level_timer  = 0.0
+        self._intro_timer  = 3.5
+        self._death_timer  = 0.0
+        self._done_timer   = 0.0
+        self._ending_tick  = 0
+        self._level_score  = 0
 
-        # narrator hint
-        self._hint_text     = ""
-        self._hint_shown    = False
-        self._hint_timer    = 0.0
+        self._hint_text    = ""
+        self._hint_shown   = False
+        self._hint_timer   = 0.0
 
-        # invert flash visual
-        self._invert_flash  = 0.0   # countdown seconds
-
-        # glitch flash (level 4 wall spawn)
+        self._invert_flash = 0.0
         self._glitch_frames = 0
 
-        # screen shake
-        self._shake_rem  = 0
-        self._shake_off  = (0, 0)
+        self._shake_rem = 0
+        self._shake_off = (0, 0)
 
-        # blink / tick
-        self._blink_t    = 0.0
-        self._blink      = True
+        self._blink_t   = 0.0
+        self._blink     = True
         self._tick_count = 0
+
+        self._note_lines: list[str] = []
+        self._note_timer: float     = 0.0
 
         self._last_t = time.perf_counter()
         self._loop()
@@ -237,7 +285,7 @@ class GameController:
                 self._do_fade(self._go_menu)
 
         elif self.state == GS.DEAD:
-            if k == "r":
+            if k in ("return", "enter", "r"):
                 self._do_fade(self._restart)
             elif k == "escape":
                 self._do_fade(self._go_menu)
@@ -276,10 +324,8 @@ class GameController:
         now = time.perf_counter()
         dt  = min(now - self._last_t, 0.05)
         self._last_t = now
-
         self._update(dt)
         self._render()
-
         self.root.after(FRAME_MS, self._loop)
 
     def _update(self, dt: float) -> None:
@@ -294,8 +340,9 @@ class GameController:
 
         if self._invert_flash > 0:
             self._invert_flash = max(0.0, self._invert_flash - dt)
+        if self._note_timer > 0:
+            self._note_timer = max(0.0, self._note_timer - dt)
 
-        # shake decay
         if self._shake_rem > 0:
             self._shake_rem -= 1
             s = SHAKE_STRENGTH
@@ -303,11 +350,11 @@ class GameController:
         else:
             self._shake_off = (0, 0)
 
-        if   self.state == GS.INTRO:       self._upd_intro(dt)
-        elif self.state == GS.PLAYING:     self._upd_playing(dt)
-        elif self.state == GS.DEAD:        self._upd_dead(dt)
-        elif self.state == GS.LEVEL_DONE:  self._upd_done(dt)
-        elif self.state == GS.ENDING:      self._ending_tick += 1
+        if   self.state == GS.INTRO:      self._upd_intro(dt)
+        elif self.state == GS.PLAYING:    self._upd_playing(dt)
+        elif self.state == GS.DEAD:       self._upd_dead(dt)
+        elif self.state == GS.LEVEL_DONE: self._upd_done(dt)
+        elif self.state == GS.ENDING:     self._ending_tick += 1
 
     def _upd_intro(self, dt: float) -> None:
         self.ui.update_typewriter(dt)
@@ -315,7 +362,6 @@ class GameController:
         if self._intro_timer <= 0 and self.ui._tw.is_done:
             self._start_playing()
         elif self._intro_timer <= 0:
-            # finished countdown — auto-skip remaining text
             self.ui.skip_typewriter()
             self._start_playing()
 
@@ -325,7 +371,6 @@ class GameController:
         self._level_timer += dt
         self.player.tick_effects(dt)
 
-        # narrator hint
         hint_cfg = LEVEL_HINTS.get(self.current_lvl)
         if hint_cfg and not self._hint_shown:
             self._hint_timer += dt
@@ -337,15 +382,28 @@ class GameController:
         xm, ym = self.player.get_input_multiplier()
         self.player.update(dx * xm, dy * ym, dt, self.level.walls)
 
+        # Update camera to follow player
+        px_world = self.player.gx * TILE_SIZE + TILE_SIZE / 2
+        py_world = self.player.gy * TILE_SIZE + TILE_SIZE / 2
+        self.camera.follow(px_world, py_world, dt)
+
         event = self.level.update(dt, self.player)
-        if   event == "killed":        self._trigger_death()
-        elif event == "level_complete": self._trigger_complete()
+        if event == "killed":
+            self._trigger_death()
+        elif event == "level_complete":
+            self._trigger_complete()
         elif event == "invert_applied":
             self._shake(4)
-            self._invert_flash = 0.25
+            self._invert_flash = 0.3
+        elif event == "darkness_applied":
+            self._shake(3)
+        elif event == "note_collected":
+            if self.level._last_note:
+                self._note_lines = list(self.level._last_note)
+                self._note_timer = 6.0
 
         if self.level._glitch_countdown > 0:
-            self._shake(6)
+            self._shake(8)
 
     def _upd_dead(self, dt: float) -> None:
         self._death_timer += dt
@@ -363,7 +421,7 @@ class GameController:
 
     def _begin_level(self, num: int) -> None:
         self.current_lvl  = num
-        self._intro_timer = 3.0
+        self._intro_timer = 3.5
         self._hint_shown  = False
         self._hint_timer  = 0.0
         self._hint_text   = ""
@@ -375,10 +433,16 @@ class GameController:
         lv, start = make_level(self.current_lvl)
         self.level  = lv
         self.player = Player(*start)
+        mw, mh      = lv.pixel_size()
+        self.camera.set_map(mw, mh)
+        px0 = start[0] * TILE_SIZE + TILE_SIZE / 2
+        py0 = start[1] * TILE_SIZE + TILE_SIZE / 2
+        self.camera.snap(px0, py0)
         self._level_timer  = 0.0
         self._hint_shown   = False
         self._hint_timer   = 0.0
         self._hint_text    = ""
+        self._note_timer   = 0.0
         self.state = GS.PLAYING
 
     def _restart(self) -> None:
@@ -388,19 +452,21 @@ class GameController:
         if self.player:
             self.player.die()
             cx, cy = self.player.center
-            ox, oy = self._maze_offset()
-            self.particles.burst(cx + ox, cy + oy)
+            ox, oy = self.camera.ox, self.camera.oy
+            px_screen = cx + ox
+            py_screen = cy + oy
+            self.particles.burst(px_screen, py_screen, "#ff3333", 18)
             self.total_deaths += 1
         self._death_timer = 0.0
         self._shake(SHAKE_FRAMES)
         lines = self.level.pick_death_message() if self.level else ["You died."]
-        self.ui.start_intro(lines)   # reuse typewriter for death text
+        self.ui.start_intro(lines)
         self.state = GS.DEAD
 
     def _trigger_complete(self) -> None:
-        self._level_score  = self._calc_score()
-        self.total_score  += self._level_score
-        self._done_timer   = 0.0
+        self._level_score = self._calc_score()
+        self.total_score += self._level_score
+        self._done_timer  = 0.0
         lines = LEVEL_COMPLETIONS.get(self.current_lvl, ["Level complete."])
         self.ui.start_intro(lines)
         self.state = GS.LEVEL_DONE
@@ -408,8 +474,7 @@ class GameController:
     def _advance(self) -> None:
         nxt = self.current_lvl + 1
         if nxt > TOTAL_LEVELS:
-            lines = LEVEL_COMPLETIONS.get(5, [])
-            self.ui.start_intro(lines)
+            self.ui.start_intro(LEVEL_ENDING)
             self._ending_tick = 0
             self.state = GS.ENDING
         else:
@@ -428,9 +493,9 @@ class GameController:
             self.fade.start(callback)
 
     def _calc_score(self) -> int:
-        deaths    = self.player.deaths if self.player else 0
-        base      = SCORE_BASE * self.current_lvl
-        time_bon  = max(0, int((60 - self._level_timer) * SCORE_TIME_BONUS))
+        deaths   = self.player.deaths if self.player else 0
+        base     = SCORE_BASE * self.current_lvl
+        time_bon = max(0, int((90 - self._level_timer) * SCORE_TIME_BONUS))
         death_pen = deaths * SCORE_DEATH_PEN
         return max(0, base + time_bon - death_pen)
 
@@ -445,7 +510,7 @@ class GameController:
         self.canvas.delete("all")
         ox, oy = self._shake_off
 
-        if   self.state == GS.MENU:
+        if self.state == GS.MENU:
             self.ui.draw_main_menu(self._blink, self._tick_count)
 
         elif self.state == GS.HELP:
@@ -455,180 +520,405 @@ class GameController:
             self.ui.draw_level_intro(max(0.0, self._intro_timer))
 
         elif self.state in (GS.PLAYING, GS.DEAD):
-            self._draw_maze(ox, oy)
-            if self.state == GS.PLAYING:
-                self._draw_player(ox, oy)
-            elif self.player:
-                self._draw_player_dead(ox, oy)
+            self._draw_world(ox, oy)
             self.particles.render(self.canvas)
             self.ui.draw_scanlines()
 
             if self.state == GS.PLAYING:
-                invert_rem = self.player.effects.get("invert_controls", 0.0) if self.player else 0.0
+                invert_rem = (self.player.effects.get("invert_controls", 0.0)
+                              if self.player else 0.0)
+                dark_rem   = (self.player.effects.get("darkness", 0.0)
+                              if self.player else 0.0)
                 self.ui.draw_hud(
                     self.current_lvl, self._level_timer, self.total_score,
                     self.player.deaths if self.player else 0,
-                    "", self._hint_text if self._hint_shown else "",
-                    invert_rem,
+                    self._hint_text if self._hint_shown else "",
+                    invert_rem, dark_rem,
+                    self.player.notes_found if self.player else 0,
                 )
                 if self._invert_flash > 0:
                     self.ui.draw_invert_flash(self._invert_flash * 4)
+                if self._note_timer > 0 and self._note_lines:
+                    self.ui.draw_note_popup(self._note_lines, self._note_timer)
+
             elif self.state == GS.DEAD:
-                self.ui.draw_death([], self._death_timer)
+                self.ui.draw_death(self._death_timer)
 
         elif self.state == GS.LEVEL_DONE:
-            self._draw_maze(0, 0)
+            self._draw_world(0, 0)
             self.ui.draw_scanlines()
             self.ui.draw_level_complete(self._level_score)
 
         elif self.state == GS.ENDING:
             self.ui.draw_ending(self._ending_tick)
 
-        # fade on top of everything
         if self.fade.active:
             self.ui.draw_fade(self.fade.alpha)
 
     # ------------------------------------------------------------------
-    # Maze / player rendering
+    # World rendering
     # ------------------------------------------------------------------
 
-    def _maze_offset(self) -> tuple[int, int]:
-        if not self.level:
-            return 0, 0
-        mw = self.level.cols * TILE_SIZE
-        mh = self.level.rows * TILE_SIZE
-        ox = (CANVAS_W - mw) // 2
-        oy = max(44, (CANVAS_H - mh) // 2)   # leave room for HUD bar
-        return ox, oy
-
-    def _draw_maze(self, sx: int = 0, sy: int = 0) -> None:
+    def _draw_world(self, sx: int, sy: int) -> None:
         if not self.level:
             return
-        ox, oy = self._maze_offset()
-        ox += sx; oy += sy
+        ox = self.camera.ox + sx
+        oy = self.camera.oy + sy
+        cs, rs, ce, re = self.camera.visible_tile_range()
+        ce = min(ce, self.level.cols)
+        re = min(re, self.level.rows)
 
         self.canvas.create_rectangle(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        # Maze area background
+        self.canvas.create_rectangle(
+            0, HUD_H, CANVAS_W, CANVAS_H, fill="#050508", outline="")
 
         t = time.perf_counter()
 
-        for entity in self.level.get_renderables():
-            ex = entity.gx * TILE_SIZE + ox
-            ey = entity.gy * TILE_SIZE + oy
-
-            if isinstance(entity, Wall):
-                w: Wall = entity
-                if w.ghost:
-                    if w.flash_frames > 0:
-                        # glitch flash: alternate bright/dark
-                        col = "#ffffff" if w.flash_frames % 4 < 2 else "#ff00ff"
-                        self.canvas.create_rectangle(
-                            ex, ey, ex+TILE_SIZE, ey+TILE_SIZE,
-                            fill=col, outline="",
-                        )
-                    # invisible walls are invisible once flash done
-                else:
+        # Floor (open cells) — subtle grid lines
+        for gy in range(rs, re):
+            for gx in range(cs, ce):
+                if self.level.grid[gy][gx] != '#':
+                    ex = gx * TILE_SIZE + ox
+                    ey = gy * TILE_SIZE + oy
                     self.canvas.create_rectangle(
-                        ex, ey, ex+TILE_SIZE, ey+TILE_SIZE,
-                        fill="#d4d4d4", outline="#999999", width=1,
+                        ex, ey, ex + TILE_SIZE, ey + TILE_SIZE,
+                        fill="#0a0a0e", outline="#111118", width=1,
                     )
 
-            elif isinstance(entity, FakeExit):
+        # Walls (viewport culled via wall_map)
+        max_coord = self.level.cols + self.level.rows
+        for gy in range(rs, re):
+            for gx in range(cs, ce):
+                key = (gx, gy)
+                if key not in self.level._wall_map:
+                    continue
+                w = self.level._wall_map[key]
+                ex = gx * TILE_SIZE + ox
+                ey = gy * TILE_SIZE + oy
+                self._draw_wall_tile(w, ex, ey, gx, gy, max_coord)
+
+        # Ghost trails for moving exit
+        if self.level.moving_exit:
+            me = self.level.moving_exit
+            for i, (tgx, tgy) in enumerate(me.ghost_trail):
+                a = (i + 1) / (len(me.ghost_trail) + 1)
+                v = int(a * 55)
+                trail_col = f"#00{v:02x}33"
+                tx = tgx * TILE_SIZE + ox
+                ty = tgy * TILE_SIZE + oy
+                self.canvas.create_rectangle(
+                    tx + 5, ty + 5, tx + TILE_SIZE - 5, ty + TILE_SIZE - 5,
+                    fill=trail_col, outline="",
+                )
+
+        # Exits
+        for ex_ent in self.level.exits:
+            if ex_ent.visible:
+                ex = ex_ent.gx * TILE_SIZE + ox
+                ey = ex_ent.gy * TILE_SIZE + oy
+                self._draw_exit_tile(ex, ey, self._pulse_green(t), is_fake=False)
+
+        if self.level.moving_exit:
+            me = self.level.moving_exit
+            ex = me.gx * TILE_SIZE + ox
+            ey = me.gy * TILE_SIZE + oy
+            self._draw_exit_tile(ex, ey, self._pulse_green(t), is_fake=False)
+
+        for fe in self.level.fake_exits:
+            if fe.visible:
+                ex = fe.gx * TILE_SIZE + ox
+                ey = fe.gy * TILE_SIZE + oy
                 self._draw_exit_tile(ex, ey, "#00cc44", is_fake=True)
 
-            elif isinstance(entity, (Exit, MovingExit)):
-                if isinstance(entity, MovingExit):
-                    # ghost trail
-                    for i, (tgx, tgy) in enumerate(entity.ghost_trail):
-                        a = (i + 1) / (len(entity.ghost_trail) + 1)
-                        v = int(a * 60)
-                        trail_col = f"#00{v:02x}44"
-                        tx = tgx * TILE_SIZE + ox
-                        ty = tgy * TILE_SIZE + oy
-                        self.canvas.create_rectangle(
-                            tx+4, ty+4, tx+TILE_SIZE-4, ty+TILE_SIZE-4,
-                            fill=trail_col, outline="",
-                        )
-                pulse_col = self._pulse_green(t)
-                self._draw_exit_tile(ex, ey, pulse_col, is_fake=False)
-
-            elif isinstance(entity, TriggerTile):
+        # Trigger tiles (subtle floor rune when visible)
+        for trig in self.level.triggers:
+            if trig.visible and not trig.triggered:
+                ex = trig.gx * TILE_SIZE + ox
+                ey = trig.gy * TILE_SIZE + oy
                 self.canvas.create_rectangle(
-                    ex+2, ey+2, ex+TILE_SIZE-2, ey+TILE_SIZE-2,
-                    fill="#1a001a", outline="",
+                    ex + 3, ey + 3, ex + TILE_SIZE - 3, ey + TILE_SIZE - 3,
+                    fill="#1a0020", outline="#440055", width=1,
                 )
+
+        # Notes
+        for note in self.level.notes:
+            if not note.collected:
+                nx = note.gx * TILE_SIZE + ox
+                ny = note.gy * TILE_SIZE + oy
+                self._draw_note_icon(nx, ny, t)
+
+        # Enemies
+        for enemy in self.level.enemies:
+            if enemy.alive:
+                self._draw_enemy(enemy, ox, oy, t)
+
+        # Player
+        if self.player:
+            if self.player.alive:
+                self._draw_player(ox, oy, t)
+            elif self.player.flash_timer > 0:
+                self._draw_player_dead(ox, oy)
+
+        # Darkness overlay
+        if self.player and self.player.has_effect("darkness"):
+            self._draw_darkness(ox, oy, cs, rs, ce, re, t)
+
+    # ------------------------------------------------------------------
+    # Tile rendering helpers
+    # ------------------------------------------------------------------
+
+    def _draw_wall_tile(self, w: Wall, ex: float, ey: float,
+                         gx: int, gy: int, max_coord: int) -> None:
+        ts = TILE_SIZE
+        if w.ghost:
+            if w.flash_frames > 0:
+                col = "#e0e0ff" if w.flash_frames % 4 < 2 else "#ff00cc"
+                self.canvas.create_rectangle(
+                    ex, ey, ex + ts, ey + ts, fill=col, outline="")
+            return
+
+        zone = (gx + gy) / max_coord
+        r = int(0x28 + zone * 0x18)
+        g = int(0x28 + zone * 0x10)
+        b = int(0x2c + zone * 0x1c)
+        base_col = f"#{r:02x}{g:02x}{b:02x}"
+
+        hl_r = min(255, r + 0x1a)
+        hl_g = min(255, g + 0x14)
+        hl_b = min(255, b + 0x1e)
+        hl_col = f"#{hl_r:02x}{hl_g:02x}{hl_b:02x}"
+
+        sh_r = max(0, r - 0x10)
+        sh_g = max(0, g - 0x0c)
+        sh_b = max(0, b - 0x12)
+        sh_col = f"#{sh_r:02x}{sh_g:02x}{sh_b:02x}"
+
+        self.canvas.create_rectangle(
+            ex, ey, ex + ts, ey + ts, fill=base_col, outline="")
+        self.canvas.create_line(ex, ey, ex + ts, ey, fill=hl_col)
+        self.canvas.create_line(ex, ey, ex, ey + ts, fill=hl_col)
+        self.canvas.create_line(ex, ey + ts - 1, ex + ts, ey + ts - 1,
+                                fill=sh_col)
+        self.canvas.create_line(ex + ts - 1, ey, ex + ts - 1, ey + ts,
+                                fill=sh_col)
 
     def _pulse_green(self, t: float) -> str:
         v = int(160 + 95 * math.sin(t * 5.0))
         v = max(0, min(255, v))
-        return f"#00{v:02x}44"
+        return f"#00{v:02x}55"
 
-    def _draw_exit_tile(self, ex: float, ey: float, color: str, is_fake: bool) -> None:
+    def _draw_exit_tile(self, ex: float, ey: float,
+                         color: str, is_fake: bool) -> None:
         ts = TILE_SIZE
-        # glow layers
-        glow_colors = ["#003322", "#005533", color]
-        margins     = [0, 2, 4]
-        for col, m in zip(glow_colors, margins):
+        for col, m in [("#002a18", 0), ("#00552e", 3), (color, 6)]:
             self.canvas.create_rectangle(
-                ex+m, ey+m, ex+ts-m, ey+ts-m,
+                ex + m, ey + m, ex + ts - m, ey + ts - m,
                 fill=col, outline="",
             )
-        # label
         self.canvas.create_text(
-            ex + ts//2, ey + ts//2, text="EXIT",
-            font=("Courier", 6, "bold"), fill="#000000",
+            ex + ts // 2, ey + ts // 2, text="EXIT",
+            font=("Courier", 5, "bold"), fill="#000000",
         )
 
-    def _draw_player(self, sx: int, sy: int) -> None:
-        if not self.player or not self.player.alive:
-            return
-        ox, oy = self._maze_offset()
-        ox += sx; oy += sy
-
-        p    = self.player
-        cx   = p.gx * TILE_SIZE + TILE_SIZE / 2 + ox
-        cy   = p.gy * TILE_SIZE + TILE_SIZE / 2 + oy
-        bob  = math.sin(p.bob_timer) * 1.2
-        cy  += bob
-
-        hw   = (PLAYER_SIZE / 2) * p.squish_x
-        hh   = (PLAYER_SIZE / 2) * p.squish_y
-
-        # trail shadow
+    def _draw_note_icon(self, nx: float, ny: float, t: float) -> None:
+        ts    = TILE_SIZE
+        pulse = 0.5 + 0.5 * math.sin(t * 4.0)
+        v     = int(0xaa + pulse * 0x55)
+        col   = f"#{v:02x}{int(v*0.8):02x}00"
         self.canvas.create_rectangle(
-            cx - hw + 2, cy - hh + 2, cx + hw + 2, cy + hh + 2,
-            fill="#220000", outline="",
+            nx + 5, ny + 4, nx + ts - 5, ny + ts - 4,
+            fill="#1a1000", outline=col, width=1,
         )
+        self.canvas.create_text(
+            nx + ts // 2, ny + ts // 2, text="!",
+            font=("Courier", 8, "bold"), fill=col,
+        )
+
+    # ------------------------------------------------------------------
+    # Enemy rendering
+    # ------------------------------------------------------------------
+
+    def _draw_enemy(self, enemy: Enemy, ox: int, oy: int, t: float) -> None:
+        cx = enemy.gx_f * TILE_SIZE + TILE_SIZE / 2 + ox
+        cy = enemy.gy_f * TILE_SIZE + TILE_SIZE / 2 + oy
+
+        at = enemy._anim_timer
+        wobble = math.sin(at * 9.0) * 1.8
+        pulse  = 11 + math.sin(at * 4.0) * 2.5
+
+        # Glow aura
+        self.canvas.create_oval(
+            cx - pulse, cy - pulse, cx + pulse, cy + pulse,
+            fill="", outline="#3a0000", width=2,
+        )
+
+        # Diamond body
+        pts = [
+            cx + wobble * 0.5, cy - 10,
+            cx + 8,            cy + wobble * 0.3,
+            cx - wobble * 0.5, cy + 10,
+            cx - 8,            cy - wobble * 0.3,
+        ]
+        self.canvas.create_polygon(pts, fill="#5a0000", outline="#cc1100", width=1)
+
+        # Inner highlight
+        pts2 = [cx + wobble * 0.3, cy - 5,
+                cx + 4, cy + wobble * 0.2,
+                cx - wobble * 0.3, cy + 5,
+                cx - 4, cy - wobble * 0.2]
+        self.canvas.create_polygon(pts2, fill="#880000", outline="")
+
+        # Top spikes
+        for i in (-3, 0, 3):
+            sx = cx + i + wobble * 0.2
+            self.canvas.create_polygon(
+                [sx, cy - 14, sx - 1.5, cy - 10, sx + 1.5, cy - 10],
+                fill="#cc1100", outline="",
+            )
+
+        # Eyes (blink occasionally)
+        blink_open = abs(math.sin(at * 1.3)) > 0.07
+        if blink_open:
+            for ex_off in (-2.5, 2.5):
+                self.canvas.create_oval(
+                    cx + ex_off - 2, cy - 3,
+                    cx + ex_off + 2, cy + 1,
+                    fill="#ff4400", outline="#ffaa00", width=1,
+                )
+                self.canvas.create_oval(
+                    cx + ex_off - 0.8, cy - 2,
+                    cx + ex_off + 0.8, cy,
+                    fill="#ffee00", outline="",
+                )
+
+    # ------------------------------------------------------------------
+    # Player rendering
+    # ------------------------------------------------------------------
+
+    def _draw_player(self, ox: int, oy: int, t: float) -> None:
+        p  = self.player
+        cx = p.gx * TILE_SIZE + TILE_SIZE / 2 + ox
+        cy = p.gy * TILE_SIZE + TILE_SIZE / 2 + oy + math.sin(p.bob_timer) * 1.4
+
+        hw = (PLAYER_SIZE / 2) * p.squish_x
+        hh = (PLAYER_SIZE / 2) * p.squish_y
 
         color = p.color
         if p.has_effect("invert_controls"):
-            v = int(140 + 115 * abs(math.sin(time.perf_counter() * 9)))
+            v     = int(150 + 105 * abs(math.sin(t * 9.0)))
             color = f"#{v:02x}00{v:02x}"
+        if p.has_effect("darkness"):
+            color = "#ddcc00"
 
-        self.canvas.create_rectangle(
-            cx - hw, cy - hh, cx + hw, cy + hh,
-            fill=color, outline="#ff8888", width=1,
-        )
-
-        # facing dot
-        fd = {"right":(6,0),"left":(-6,0),"down":(0,6),"up":(0,-6)}.get(p.facing,(0,0))
-        r  = 2.5
+        # Drop shadow
         self.canvas.create_oval(
-            cx+fd[0]-r, cy+fd[1]-r, cx+fd[0]+r, cy+fd[1]+r,
-            fill="#ffffff", outline="",
+            cx - hw + 1, cy + hh * 0.6,
+            cx + hw + 2, cy + hh + 3,
+            fill="#0a0005", outline="",
         )
 
-    def _draw_player_dead(self, sx: int, sy: int) -> None:
-        if not self.player:
-            return
-        ox, oy = self._maze_offset()
-        ox += sx; oy += sy
-        p    = self.player
-        cx   = p.gx * TILE_SIZE + TILE_SIZE / 2 + ox
-        cy   = p.gy * TILE_SIZE + TILE_SIZE / 2 + oy
+        # Body (lower portion)
+        body_top = cy - hh * 0.15
+        self.canvas.create_rectangle(
+            cx - hw, body_top, cx + hw, cy + hh,
+            fill=color, outline="#ff6666", width=1,
+        )
+        # Body highlight
+        self.canvas.create_rectangle(
+            cx - hw + 1, body_top + 1, cx - hw + 4, cy,
+            fill="#ff8888", outline="",
+        )
+
+        # Head (oval on top)
+        hr_w = hw * 0.88
+        hr_h = hh * 0.72
+        hcy  = cy - hh * 0.55
+        self.canvas.create_oval(
+            cx - hr_w, hcy - hr_h, cx + hr_w, hcy + hr_h,
+            fill=color, outline="#ff6666", width=1,
+        )
+        # Head specular
+        self.canvas.create_oval(
+            cx - hr_w + 1, hcy - hr_h + 1,
+            cx - hr_w * 0.3, hcy,
+            fill="#ff8888", outline="",
+        )
+
+        # Eyes
+        eye_data = {
+            "right": [(cx + hr_w * 0.35, hcy - 1), (cx + hr_w * 0.35, hcy + 2.5)],
+            "left":  [(cx - hr_w * 0.35, hcy - 1), (cx - hr_w * 0.35, hcy + 2.5)],
+            "down":  [(cx - 2.5, hcy + hr_h * 0.4), (cx + 2.5, hcy + hr_h * 0.4)],
+            "up":    [(cx - 2.5, hcy - hr_h * 0.4), (cx + 2.5, hcy - hr_h * 0.4)],
+        }
+        pupil_dir = {
+            "right": (1.0, 0.0), "left": (-1.0, 0.0),
+            "down":  (0.0, 1.0), "up":   (0.0, -1.0),
+        }
+        pdx, pdy = pupil_dir.get(p.facing, (1.0, 0.0))
+        for epos in eye_data.get(p.facing, []):
+            ex_, ey_ = epos
+            self.canvas.create_oval(
+                ex_ - 2, ey_ - 2, ex_ + 2, ey_ + 2,
+                fill="#ffffff", outline="",
+            )
+            self.canvas.create_oval(
+                ex_ + pdx * 0.7 - 1, ey_ + pdy * 0.7 - 1,
+                ex_ + pdx * 0.7 + 1, ey_ + pdy * 0.7 + 1,
+                fill="#330000", outline="",
+            )
+
+    def _draw_player_dead(self, ox: int, oy: int) -> None:
+        p  = self.player
+        cx = p.gx * TILE_SIZE + TILE_SIZE / 2 + ox
+        cy = p.gy * TILE_SIZE + TILE_SIZE / 2 + oy
         if p.flash_timer > 0:
             col = p.death_flash_color()
             hw = hh = PLAYER_SIZE / 2
-            self.canvas.create_rectangle(
-                cx-hw, cy-hh, cx+hw, cy+hh,
+            self.canvas.create_oval(
+                cx - hw, cy - hh, cx + hw, cy + hh,
                 fill=col, outline="",
             )
+
+    # ------------------------------------------------------------------
+    # Darkness overlay
+    # ------------------------------------------------------------------
+
+    def _draw_darkness(self, ox: int, oy: int,
+                        cs: int, rs: int, ce: int, re: int, t: float) -> None:
+        if not self.player:
+            return
+        px, py = self.player.gx, self.player.gy
+        dr = DARK_RADIUS
+
+        for gy in range(rs, re):
+            for gx in range(cs, ce):
+                dist = math.sqrt((gx - px) ** 2 + (gy - py) ** 2)
+                if dist > dr + 0.5:
+                    ex = gx * TILE_SIZE + ox
+                    ey = gy * TILE_SIZE + oy
+                    self.canvas.create_rectangle(
+                        ex, ey, ex + TILE_SIZE, ey + TILE_SIZE,
+                        fill="#000000", outline="",
+                    )
+                elif dist > dr - 0.5:
+                    ex = gx * TILE_SIZE + ox
+                    ey = gy * TILE_SIZE + oy
+                    self.canvas.create_rectangle(
+                        ex, ey, ex + TILE_SIZE, ey + TILE_SIZE,
+                        fill="#000000", outline="", stipple="gray50",
+                    )
+
+        # Flicker at the edge of darkness
+        flicker_r = dr - 0.5 + math.sin(t * 15.0) * 0.3
+        for gy in range(rs, re):
+            for gx in range(cs, ce):
+                dist = math.sqrt((gx - px) ** 2 + (gy - py) ** 2)
+                if flicker_r < dist <= flicker_r + 1.2:
+                    ex = gx * TILE_SIZE + ox
+                    ey = gy * TILE_SIZE + oy
+                    self.canvas.create_rectangle(
+                        ex, ey, ex + TILE_SIZE, ey + TILE_SIZE,
+                        fill="#000000", outline="", stipple="gray25",
+                    )
