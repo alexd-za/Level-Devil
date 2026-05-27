@@ -89,6 +89,21 @@ class MovingExit(Exit):
         self.ghost_trail: list[tuple[int, int]] = []
 
 
+class Powerup(Entity):
+    """Collectible powerup that grants a temporary effect."""
+    COLORS = {
+        "speed_boost": "#00ddff",
+        "shield":      "#aaff44",
+    }
+
+    def __init__(self, gx: int, gy: int, kind: str, duration: float = 5.0):
+        super().__init__(gx, gy, color=Powerup.COLORS.get(kind, "#ffffff"))
+        self.kind      = kind
+        self.duration  = duration
+        self.collected = False
+        self._anim_t   = 0.0
+
+
 class Note(Entity):
     """Collectible lore fragment scattered through the maze."""
     def __init__(self, gx: int, gy: int, lines: list[str]):
@@ -213,7 +228,8 @@ class Player:
         elif dy > 0: self.facing = "down"
         elif dy < 0: self.facing = "up"
 
-        step = self.SPEED * dt
+        spd  = self.SPEED * (1.85 if self.has_effect("speed_boost") else 1.0)
+        step = spd * dt
 
         new_gx = self.gx + dx * step
         if not self._collides(new_gx, self.gy, walls):
