@@ -89,7 +89,6 @@ class MovingExit(Exit):
         self.ghost_trail: list[tuple[int, int]] = []
 
 
-
 class Note(Entity):
     def __init__(self, gx: int, gy: int, lines: list[str], note_key: str = ""):
         super().__init__(gx, gy, color="#ffcc00")
