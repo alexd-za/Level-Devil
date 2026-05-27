@@ -91,11 +91,11 @@ class MovingExit(Exit):
 
 
 class Note(Entity):
-    """Collectible lore fragment scattered through the maze."""
-    def __init__(self, gx: int, gy: int, lines: list[str]):
+    def __init__(self, gx: int, gy: int, lines: list[str], note_key: str = ""):
         super().__init__(gx, gy, color="#ffcc00")
         self.lines     = lines
         self.collected = False
+        self.note_key: str = note_key
 
 
 class Enemy(Entity):
@@ -146,6 +146,7 @@ class Player:
         self.deaths = 0
         self.alive  = True
         self.facing = "right"
+        self.noclip: bool = False
 
         self.effects: dict[str, float] = {}
 
@@ -266,6 +267,8 @@ class Player:
         return f"#{v:02x}0000"
 
     def _collides(self, gx: float, gy: float, wall_map: dict) -> bool:
+        if self.noclip:
+            return False
         px = gx * TILE_SIZE + PLAYER_GAP
         py = gy * TILE_SIZE + PLAYER_GAP
         pr = Rect(px, py, PLAYER_SIZE, PLAYER_SIZE)
