@@ -122,9 +122,6 @@ class UIManager:
                 col = "#ffffff"
             canvas.create_rectangle(sx, sy, sx + 1, sy + 1, fill=col, outline="")
 
-    # ------------------------------------------------------------------
-    # Main menu
-    # ------------------------------------------------------------------
 
     def draw_main_menu(self, blink: bool, tick: int) -> None:
         self.clear()
@@ -170,9 +167,6 @@ class UIManager:
                 "The facility assumes no liability for psychological distress.",
                 font=("Courier", 9), fill=FG_DIM, anchor="s")
 
-    # ------------------------------------------------------------------
-    # Help screen
-    # ------------------------------------------------------------------
 
     def draw_help(self) -> None:
         self.clear()
@@ -235,7 +229,7 @@ class UIManager:
                 font=("Courier", 12, "bold"), fill=YELLOW, anchor="center")
         cy += 24
         self._t(CANVAS_W // 2, cy,
-                "Score = (6000 × sector) + time bonus − (250 × deaths)",
+                "Score = (6000 × sector) + time bonus − (400 × deaths)",
                 font=("Courier", 10), fill=FG_MID, anchor="center")
         cy += 18
         self._t(CANVAS_W // 2, cy, "Dying is suboptimal.",
@@ -244,9 +238,6 @@ class UIManager:
         self._t(CANVAS_W // 2, CANVAS_H - 56, "[ ESC or H to return ]",
                 font=("Courier", 11), fill=FG_DIM, anchor="center")
 
-    # ------------------------------------------------------------------
-    # Intro / death typewriter screen
-    # ------------------------------------------------------------------
 
     def start_intro(self, lines: list[str]) -> None:
         self._tw.reset(lines)
@@ -311,9 +302,6 @@ class UIManager:
                     "[ ENTER to skip ]",
                     font=("Courier", 10), fill=FG_DIM, anchor="center")
 
-    # ------------------------------------------------------------------
-    # HUD
-    # ------------------------------------------------------------------
 
     def draw_hud(self, level: int, elapsed: float, score: int,
                  deaths: int, hint: str,
@@ -419,9 +407,6 @@ class UIManager:
         if lab_msg and lab_timer > 0:
             self.draw_lab_message(lab_msg, lab_timer, lab_kind)
 
-    # ------------------------------------------------------------------
-    # Death overlay
-    # ------------------------------------------------------------------
 
     def draw_death(self, fade: float) -> None:
         self.clear()
@@ -459,9 +444,6 @@ class UIManager:
                     "[ ENTER / R — retry   ·   ESC — main menu ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
-    # ------------------------------------------------------------------
-    # Level complete
-    # ------------------------------------------------------------------
 
     def draw_level_complete(self, score_gained: int) -> None:
         self.clear()
@@ -504,9 +486,6 @@ class UIManager:
             self._t(CANVAS_W // 2, CANVAS_H - 50, "[ ENTER to continue ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
-    # ------------------------------------------------------------------
-    # Ending screen
-    # ------------------------------------------------------------------
 
     def draw_ending(self, tick: int) -> None:
         self.clear()
@@ -520,7 +499,7 @@ class UIManager:
 
         visible = self._tw.visible_lines()
 
-        # Measure total height first so we can auto-scroll as text grows
+
         LINE_GAP = 6
         line_heights = []
         for i, line in enumerate(visible):
@@ -544,15 +523,15 @@ class UIManager:
             line_heights.append(size + LINE_GAP)
 
         total_h = sum(line_heights)
-        view_h  = CANVAS_H - 80  # reserve top/bottom border
-        # scroll: as total_h exceeds view_h, shift upward
+        view_h  = CANVAS_H - 80
+
         scroll  = max(0, total_h - view_h)
         cy      = 36 - scroll
 
         for i, line in enumerate(visible):
             lh = line_heights[i]
             draw_y = cy + lh // 2
-            if 24 <= draw_y <= CANVAS_H - 50:  # only draw if in viewport
+            if 24 <= draw_y <= CANVAS_H - 50:
                 if not line:
                     pass
                 else:
@@ -583,9 +562,6 @@ class UIManager:
             self._t(CANVAS_W // 2, CANVAS_H - 34, "[ ENTER — main menu ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
-    # ------------------------------------------------------------------
-    # Note popup
-    # ------------------------------------------------------------------
 
     def draw_note_reading(self, lines: list[str]) -> None:
         self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray50")
@@ -651,9 +627,6 @@ class UIManager:
                 "[ ENTER  to continue ]",
                 font=("Courier", 10, "bold"), fill=prompt_col, anchor="center")
 
-    # ------------------------------------------------------------------
-    # Lab message corner popup
-    # ------------------------------------------------------------------
 
     _EFFECT_COLORS: dict = {
         "invert_controls": ("#ff6600", "#0c0400", "#441000"),
@@ -705,9 +678,6 @@ class UIManager:
                 font=("Courier", 8), fill=msg_col, anchor="nw",
                 width=pw - 20)
 
-    # ------------------------------------------------------------------
-    # Leaderboard screen
-    # ------------------------------------------------------------------
 
     def draw_leaderboard(self, scores: list) -> None:
         self.clear()
@@ -758,9 +728,6 @@ class UIManager:
                 "[ ESC / L / ENTER — back to menu ]",
                 font=("Courier", 10), fill=FG_DIM, anchor="center")
 
-    # ------------------------------------------------------------------
-    # Overlays
-    # ------------------------------------------------------------------
 
     def draw_pause(self) -> None:
         self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray50")

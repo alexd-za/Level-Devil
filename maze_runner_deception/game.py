@@ -29,12 +29,8 @@ SCORE_DEATH_PEN  = 400
 SHAKE_FRAMES   = 10
 SHAKE_STRENGTH = 6
 
-DARK_RADIUS    = 5.5   # tiles visible when darkness is active
+DARK_RADIUS    = 5.5
 
-
-# ---------------------------------------------------------------------------
-# Camera
-# ---------------------------------------------------------------------------
 
 class Camera:
     LERP_SPD = 9.0
@@ -86,10 +82,6 @@ class Camera:
         return cs, rs, ce, re
 
 
-# ---------------------------------------------------------------------------
-# Particle system
-# ---------------------------------------------------------------------------
-
 @dataclass
 class Particle:
     x: float; y: float
@@ -130,7 +122,7 @@ class ParticleSystem:
         for p in self.particles:
             a  = max(0.0, p.life / p.max_life)
             s  = p.size * a
-            # fade to black using base color lightness
+
             try:
                 r = int(int(p.color[1:3], 16) * a)
                 g = int(int(p.color[3:5], 16) * a)
@@ -143,10 +135,6 @@ class ParticleSystem:
                 fill=col, outline="",
             )
 
-
-# ---------------------------------------------------------------------------
-# Fade transition
-# ---------------------------------------------------------------------------
 
 class FadeTransition:
     SPEED = 3.5
@@ -182,10 +170,6 @@ class FadeTransition:
             self._dir  = 0
 
 
-# ---------------------------------------------------------------------------
-# Game states
-# ---------------------------------------------------------------------------
-
 class GS:
     MENU        = "menu"
     HELP        = "help"
@@ -198,10 +182,6 @@ class GS:
     ENDING      = "ending"
     LEADERBOARD = "leaderboard"
 
-
-# ---------------------------------------------------------------------------
-# GameController
-# ---------------------------------------------------------------------------
 
 class GameController:
     def __init__(self, root: tk.Tk, canvas: tk.Canvas):
@@ -269,9 +249,6 @@ class GameController:
         self._last_t = time.perf_counter()
         self._loop()
 
-    # ------------------------------------------------------------------
-    # Input
-    # ------------------------------------------------------------------
 
     def _bind_keys(self) -> None:
         self.root.bind("<KeyPress>",   self._on_press)
@@ -368,9 +345,6 @@ class GameController:
             dy *= 0.7071
         return dx, dy
 
-    # ------------------------------------------------------------------
-    # Main loop
-    # ------------------------------------------------------------------
 
     def _loop(self) -> None:
         now = time.perf_counter()
@@ -516,9 +490,6 @@ class GameController:
         self._done_timer += dt
         self.ui.update_typewriter(dt)
 
-    # ------------------------------------------------------------------
-    # State transitions
-    # ------------------------------------------------------------------
 
     def _begin_level(self, num: int) -> None:
         self.current_lvl  = num
@@ -661,9 +632,6 @@ class GameController:
         elif k in ("1", "2", "3", "4", "5"):
             self._do_fade(lambda n=int(k): self._begin_level(n))
 
-    # ------------------------------------------------------------------
-    # Rendering
-    # ------------------------------------------------------------------
 
     def _render(self) -> None:
         self.canvas.delete("all")
@@ -743,9 +711,6 @@ class GameController:
         if self.fade.active:
             self.ui.draw_fade(self.fade.alpha)
 
-    # ------------------------------------------------------------------
-    # World rendering
-    # ------------------------------------------------------------------
 
     def _draw_world(self, sx: int, sy: int) -> None:
         if not self.level:
@@ -774,7 +739,7 @@ class GameController:
             ly = gy * TILE_SIZE + oy
             self.canvas.create_line(x0, ly, x1, ly, fill="#2c2c3e", width=1)
 
-        # Walls (viewport culled via wall_map)
+
         max_coord = self.level.cols + self.level.rows
         for gy in range(rs, re):
             for gx in range(cs, ce):
@@ -786,7 +751,7 @@ class GameController:
                 ey = gy * TILE_SIZE + oy
                 self._draw_wall_tile(w, ex, ey, gx, gy, max_coord)
 
-        # Ghost trails for moving exit
+
         if self.level.moving_exit:
             me = self.level.moving_exit
             for i, (tgx, tgy) in enumerate(me.ghost_trail):
@@ -800,7 +765,7 @@ class GameController:
                     fill=trail_col, outline="",
                 )
 
-        # Exits
+
         for ex_ent in self.level.exits:
             if ex_ent.visible:
                 ex = ex_ent.gx * TILE_SIZE + ox
@@ -819,36 +784,33 @@ class GameController:
                 ey = fe.gy * TILE_SIZE + oy
                 self._draw_exit_tile(ex, ey, "#00cc44", is_fake=True)
 
-        # Notes
+
         for note in self.level.notes:
             if not note.collected:
                 nx = note.gx * TILE_SIZE + ox
                 ny = note.gy * TILE_SIZE + oy
                 self._draw_note_icon(nx, ny, t)
 
-        # Enemies
+
         for enemy in self.level.enemies:
             if enemy.alive:
                 self._draw_enemy(enemy, ox, oy, t)
 
-        # Player
+
         if self.player:
             if self.player.alive:
                 self._draw_player(ox, oy, t)
             elif self.player.flash_timer > 0:
                 self._draw_player_dead(ox, oy)
 
-        # Darkness overlay
+
         if self.player and self.player.has_effect("darkness"):
             self._draw_darkness(ox, oy, cs, rs, ce, re, t)
 
-        # Static burst overlay
+
         if self._static_timer > 0:
             self.ui.draw_static_overlay(min(1.0, self._static_timer / 0.6))
 
-    # ------------------------------------------------------------------
-    # Tile rendering helpers
-    # ------------------------------------------------------------------
 
     def _draw_wall_tile(self, w: Wall, ex: float, ey: float,
                          gx: int, gy: int, max_coord: int) -> None:
@@ -899,17 +861,17 @@ class GameController:
         ts  = TILE_SIZE
         cx  = ex + ts // 2
         cy  = ey + ts // 2
-        # Outer glow ring
+
         self.canvas.create_rectangle(
             ex, ey, ex + ts, ey + ts,
             fill="#001a0d", outline=color, width=2,
         )
-        # Inner bright square
+
         self.canvas.create_rectangle(
             ex + 4, ey + 4, ex + ts - 4, ey + ts - 4,
             fill="#003820", outline="",
         )
-        # Arrow symbol — clearly readable
+
         self.canvas.create_text(
             cx, cy, text="▶",
             font=("TkDefaultFont", 11, "bold"), fill=color,
@@ -924,40 +886,36 @@ class GameController:
         cx = nx + ts // 2
         cy = ny + ts // 2
 
-        # Outer glow
+
         self.canvas.create_rectangle(
             nx + 3, ny + 2, nx + ts - 3, ny + ts - 2,
             fill="", outline=col, width=1,
         )
-        # Paper body
+
         self.canvas.create_rectangle(
             nx + 5, ny + 4, nx + ts - 5, ny + ts - 4,
             fill="#100d00", outline=glow, width=1,
         )
-        # Corner fold indicator
+
         self.canvas.create_polygon(
             nx + ts - 5, ny + 4,
             nx + ts - 5, ny + 9,
             nx + ts - 10, ny + 4,
             fill="#1e1600", outline=col, width=1,
         )
-        # Lines on paper
+
         for i in range(3):
             ly = ny + 9 + i * 4
             lx0 = nx + 6 + (3 if i == 0 else 0)
             self.canvas.create_line(
                 lx0, ly, nx + ts - 6, ly, fill=col, width=1,
             )
-        # Exclamation / glow dot
+
         self.canvas.create_oval(
             cx - 2, cy + 3, cx + 2, cy + 7,
             fill=glow, outline="",
         )
 
-
-    # ------------------------------------------------------------------
-    # Enemy rendering
-    # ------------------------------------------------------------------
 
     def _draw_enemy(self, enemy: Enemy, ox: int, oy: int, t: float) -> None:
         cx = enemy.gx_f * TILE_SIZE + TILE_SIZE / 2 + ox
@@ -970,14 +928,14 @@ class GameController:
         glow_r = int(80 + pulse * 120)
         glow_col = f"#{glow_r:02x}0000"
 
-        # Outer threat ring
+
         pr = 12 + math.sin(at * 3.0) * 1.5
         self.canvas.create_oval(
             cx - pr - 1, cy - pr - 1, cx + pr + 1, cy + pr + 1,
             fill="", outline=glow_col, width=1,
         )
 
-        # Hexagonal drone body (6 pts)
+
         hw = 8.5
         ang_off = at * 0.8
         hex_pts = []
@@ -986,7 +944,7 @@ class GameController:
             hex_pts += [cx + hw * math.cos(ang), cy + hw * math.sin(ang)]
         self.canvas.create_polygon(hex_pts, fill="#3a0000", outline="#bb1100", width=1)
 
-        # Inner core
+
         self.canvas.create_rectangle(
             cx - 5, cy - 5, cx + 5, cy + 5,
             fill="#660000", outline="#ff2200", width=1,
@@ -996,7 +954,7 @@ class GameController:
             fill="#ff0000", outline="",
         )
 
-        # Rotating scanner arm
+
         scan_ang = at * 4.2
         scan_len = 10
         sx = cx + math.cos(scan_ang) * scan_len
@@ -1011,7 +969,7 @@ class GameController:
             fill="#ff3300", outline="",
         )
 
-        # Three LED status dots (triangle pattern)
+
         for i, (lax, lay) in enumerate([
             (cx - 3.5, cy - 6.5),
             (cx + 3.5, cy - 6.5),
@@ -1031,9 +989,6 @@ class GameController:
                 fill="#000000", outline="", stipple="gray50",
             )
 
-    # ------------------------------------------------------------------
-    # Player rendering
-    # ------------------------------------------------------------------
 
     def _draw_player(self, ox: int, oy: int, t: float) -> None:
         p  = self.player
@@ -1077,27 +1032,27 @@ class GameController:
             visor_col = "#88ff55"
             chest_col = "#33aa11"
 
-        # Drop shadow
+
         self.canvas.create_oval(
             cx - rx + 2, cy + ry * 0.5,
             cx + rx + 3, cy + ry + 4,
             fill="#060008", outline="",
         )
 
-        # Outer glow / collar ring
+
         self.canvas.create_oval(
             cx - rx - 3, cy - ry - 3,
             cx + rx + 3, cy + ry + 3,
             fill="", outline=ring_col, width=2,
         )
 
-        # Body suit
+
         self.canvas.create_oval(
             cx - rx, cy - ry, cx + rx, cy + ry,
             fill=suit_col, outline="",
         )
 
-        # Suit shading (right side darker)
+
         shade_r = max(0, int(int(suit_col[1:3], 16) * 0.5))
         shade_g = max(0, int(int(suit_col[3:5], 16) * 0.5))
         shade_b = max(0, int(int(suit_col[5:7], 16) * 0.5))
@@ -1107,7 +1062,7 @@ class GameController:
             fill=shade_col, outline="", stipple="gray50",
         )
 
-        # Visor plate (upper portion)
+
         vr = rx * 0.72
         vy_top = cy - ry + 2
         vy_bot = cy - ry * 0.05
@@ -1116,14 +1071,14 @@ class GameController:
             fill="#080a0f", outline=visor_col, width=1,
         )
 
-        # Visor reflection glint
+
         self.canvas.create_oval(
             cx - vr * 0.48, vy_top + 2,
             cx - vr * 0.05, vy_top + 2 + vr * 0.32,
             fill=visor_col, outline="",
         )
 
-        # Chest emblem / ID badge
+
         bx = cx - rx * 0.22
         by_c = cy + ry * 0.22
         self.canvas.create_rectangle(
@@ -1132,7 +1087,7 @@ class GameController:
             fill=chest_col, outline="",
         )
 
-        # Directional eyes inside visor
+
         eye_off = {
             "right": [(vr * 0.35, vr * 0.1), (vr * 0.35, vr * 0.5)],
             "left":  [(-vr * 0.35, vr * 0.1), (-vr * 0.35, vr * 0.5)],
@@ -1170,9 +1125,6 @@ class GameController:
                 fill=col, outline="",
             )
 
-    # ------------------------------------------------------------------
-    # Darkness overlay
-    # ------------------------------------------------------------------
 
     def _draw_darkness(self, ox: int, oy: int,
                         cs: int, rs: int, ce: int, re: int, t: float) -> None:

@@ -8,10 +8,6 @@ from entities import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Lab messages
-# ---------------------------------------------------------------------------
-
 LAB_MESSAGES: dict[str, list[str]] = {
     "invert_controls": [
         "MOTOR RECAL ACTIVE  |  Subject response: nominal.",
@@ -63,10 +59,6 @@ LAB_MESSAGES: dict[str, list[str]] = {
     ],
 }
 
-
-# ---------------------------------------------------------------------------
-# Story text
-# ---------------------------------------------------------------------------
 
 INTRO_TEXT = [
     "FACILITY ORIENTATION PROTOCOL v7.3",
@@ -705,10 +697,6 @@ NOTE_CONTENTS = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Maze grids — all BFS-verified solvable, generated with recursive-backtracker
-# ---------------------------------------------------------------------------
-
 MAZE_1 = [
     "#####################",
     "#S#.#...#...........#",
@@ -876,10 +864,6 @@ MAZE_5 = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _find_char(grid: list[str], ch: str) -> Optional[tuple[int, int]]:
     for gy, row in enumerate(grid):
         for gx, c in enumerate(row):
@@ -903,10 +887,6 @@ def parse_maze(grid: list[str], fake_wall_set: set) -> list[Wall]:
                     walls.append(Wall(gx, gy))
     return walls
 
-
-# ---------------------------------------------------------------------------
-# Level config & runtime class
-# ---------------------------------------------------------------------------
 
 @dataclass
 class LevelConfig:
@@ -1103,10 +1083,6 @@ class Level:
         return random.choice(pool)
 
 
-# ---------------------------------------------------------------------------
-# Level factory
-# ---------------------------------------------------------------------------
-
 def make_level(number: int,
                session_flags: Optional[dict] = None) -> tuple["Level", tuple[int, int]]:
     if session_flags is None:
@@ -1257,7 +1233,7 @@ def make_level(number: int,
             (1, 5), (1, 7), (3, 5),
             (5, 3), (5, 5), (7, 3),
         ]
-        # Notes moved away from invisible-wall positions (7,3) and (3,5)
+
         lv = Level(LevelConfig(
             number=5,
             grid=_clean_grid(raw),
