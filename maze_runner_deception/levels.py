@@ -33,42 +33,6 @@ LAB_MESSAGES: dict[str, list[str]] = {
         "ADVISORY: Protective field engaged. The facility did not authorize this.",
         "ORACLE NOTE: Anomalous shielding detected. Subject 47 is adapting. Concerning.",
     ],
-    "note_speed_boost": [
-        "BIOMETRIC RESPONSE: Document interaction elevated heart rate. Endorphin spike logged.",
-        "PHYSIOLOGICAL ALERT: Subject 47 exhibiting stimulated response to document contents.",
-    ],
-    "note_darkness": [
-        "REDACTION PROTOCOL: Classified content accessed. Sensory restrictions applied.",
-        "ACCESS VIOLATION: Restricted document read. Visual suppression engaged per Directive 4.",
-    ],
-    "note_invert": [
-        "COGNITIVE DISRUPTION: Document contents have destabilized subject motor pathways.",
-        "NEURAL INTERFERENCE: Reading that document carries known neurological side effects.",
-    ],
-    "note_shield": [
-        "ORACLE OVERRIDE: Protective measure engaged. This was not facility-authorized.",
-        "ANOMALY LOGGED: Document triggered unsanctioned shielding response. Investigating.",
-    ],
-    "note_none": [
-        "DOCUMENT LOGGED: Content recorded. No secondary response detected.",
-        "ARCHIVAL COMPLETE: Document absorbed. Biometrics within acceptable range.",
-    ],
-}
-
-NOTE_EFFECTS: dict[str, tuple[str, float]] = {
-    "s43_journal":      ("speed_boost",     3.0),
-    "s43_journal_2":    ("none",            0.0),
-    "maintenance_leak": ("darkness",        4.0),
-    "s39_report":       ("invert_controls", 3.0),
-    "oracle_log":       ("shield",          3.0),
-    "s44_notebook":     ("invert_controls", 3.0),
-    "oracle_fragment":  ("speed_boost",     4.0),
-    "s31_warning":      ("darkness",        5.0),
-    "oracle_final":     ("shield",          4.0),
-    "dr_voss_memo":     ("invert_controls", 3.0),
-    "facility_blueprint": ("darkness",      3.0),
-    "s47_own_note":     ("none",            0.0),
-    "oracle_warning":   ("speed_boost",     3.0),
 }
 
 

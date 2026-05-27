@@ -14,7 +14,7 @@ from entities import (
 from levels import (
     Level, make_level,
     LEVEL_INTROS, LEVEL_COMPLETIONS, LEVEL_HINTS, LEVEL_ENDING,
-    INTRO_TEXT, LAB_MESSAGES, NOTE_EFFECTS,
+    INTRO_TEXT, LAB_MESSAGES,
 )
 from ui import UIManager, CANVAS_W, CANVAS_H, BG, HUD_H
 from leaderboard import save_score, top_scores
@@ -192,6 +192,7 @@ class GS:
     INTRO       = "intro"
     PLAYING     = "playing"
     PAUSED      = "paused"
+    READING     = "reading"
     DEAD        = "dead"
     LEVEL_DONE  = "level_done"
     ENDING      = "ending"
@@ -250,7 +251,6 @@ class GameController:
         self._tick_count = 0
 
         self._note_lines: list[str] = []
-        self._note_timer: float     = 0.0
 
         self._lab_msg: str      = ""
         self._lab_msg_timer: float = 0.0
@@ -275,6 +275,8 @@ class GameController:
 
     def _on_press(self, ev: tk.Event) -> None:
         k = ev.keysym.lower()
+        if k in ("quoteleft", "asciitilde", "dead_grave") or ev.char in ("`", "~"):
+            k = "grave"
         self._keys.add(k)
         self._handle_action(k)
 
@@ -325,6 +327,10 @@ class GameController:
                 self._admin_mode = not self._admin_mode
             elif self._admin_mode:
                 self._handle_admin_key(k)
+
+        elif self.state == GS.READING:
+            if k in ("return", "enter", "escape", "space"):
+                self.state = GS.PLAYING
 
         elif self.state == GS.DEAD:
             if k in ("return", "enter", "r"):
@@ -384,8 +390,6 @@ class GameController:
             self._invert_flash  = max(0.0, self._invert_flash - dt)
         if self._powerup_flash > 0:
             self._powerup_flash = max(0.0, self._powerup_flash - dt)
-        if self._note_timer > 0:
-            self._note_timer = max(0.0, self._note_timer - dt)
         if self._lab_msg_timer > 0:
             self._lab_msg_timer = max(0.0, self._lab_msg_timer - dt)
 
@@ -460,23 +464,10 @@ class GameController:
         elif event == "note_collected":
             if self.level._last_note:
                 self._note_lines = list(self.level._last_note)
-                self._note_timer = 6.0
             self.total_score += 800
             self.total_notes_found += 1
             sound.play("note")
-            collected_note = next(
-                (n for n in reversed(self.level.notes) if n.collected),
-                None,
-            )
-            if collected_note and collected_note.note_key:
-                nfx = NOTE_EFFECTS.get(collected_note.note_key)
-                if nfx and nfx[0] != "none":
-                    self.player.apply_effect(nfx[0], nfx[1])
-                    _note_lab = {"speed_boost": "note_speed_boost",
-                                 "darkness": "note_darkness",
-                                 "invert_controls": "note_invert",
-                                 "shield": "note_shield"}
-                    self._set_lab_msg(_note_lab.get(nfx[0], nfx[0]))
+            self.state = GS.READING
 
         if self.level._glitch_countdown > 0:
             self._shake(8)
@@ -517,7 +508,6 @@ class GameController:
         self._hint_shown   = False
         self._hint_timer   = 0.0
         self._hint_text    = ""
-        self._note_timer   = 0.0
         self.state = GS.PLAYING
 
     def _restart(self) -> None:
@@ -654,11 +644,11 @@ class GameController:
         elif self.state == GS.INTRO:
             self.ui.draw_level_intro()
 
-        elif self.state in (GS.PLAYING, GS.DEAD, GS.PAUSED):
+        elif self.state in (GS.PLAYING, GS.DEAD, GS.PAUSED, GS.READING):
             self._draw_world(ox, oy)
             self.particles.render(self.canvas)
 
-            if self.state in (GS.PLAYING, GS.PAUSED):
+            if self.state in (GS.PLAYING, GS.PAUSED, GS.READING):
                 invert_rem = (self.player.effects.get("invert_controls", 0.0)
                               if self.player else 0.0)
                 dark_rem   = (self.player.effects.get("darkness", 0.0)
@@ -680,10 +670,10 @@ class GameController:
                     self.ui.draw_invert_flash(self._invert_flash * 3)
                 if self._powerup_flash > 0:
                     self.ui.draw_powerup_flash(self._powerup_flash * 3)
-                if self._note_timer > 0 and self._note_lines:
-                    self.ui.draw_note_popup(self._note_lines, self._note_timer)
                 if self.state == GS.PAUSED:
                     self.ui.draw_pause()
+                elif self.state == GS.READING and self._note_lines:
+                    self.ui.draw_note_reading(self._note_lines)
 
             elif self.state == GS.DEAD:
                 self.ui.draw_death(self._death_timer)
