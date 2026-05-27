@@ -14,7 +14,7 @@ from entities import (
 from levels import (
     Level, make_level,
     LEVEL_INTROS, LEVEL_COMPLETIONS, LEVEL_HINTS, LEVEL_ENDING,
-    INTRO_TEXT, LAB_MESSAGES,
+    INTRO_TEXT, LAB_MESSAGES, NOTE_EFFECTS,
 )
 from ui import UIManager, CANVAS_W, CANVAS_H, BG, HUD_H
 from leaderboard import save_score, top_scores
@@ -24,7 +24,7 @@ TOTAL_LEVELS = 5
 
 SCORE_BASE       = 6000
 SCORE_TIME_BONUS = 120
-SCORE_DEATH_PEN  = 250
+SCORE_DEATH_PEN  = 400
 
 SHAKE_FRAMES   = 10
 SHAKE_STRENGTH = 6
@@ -191,6 +191,7 @@ class GS:
     HELP        = "help"
     INTRO       = "intro"
     PLAYING     = "playing"
+    PAUSED      = "paused"
     DEAD        = "dead"
     LEVEL_DONE  = "level_done"
     ENDING      = "ending"
@@ -257,6 +258,10 @@ class GameController:
 
         self._leaderboard_scores: list[dict] = []
 
+        self._admin_mode: bool  = False
+        self._admin_noclip: bool = False
+        self._admin_speed: bool  = False
+
         self._last_t = time.perf_counter()
         self._loop()
 
@@ -304,8 +309,22 @@ class GameController:
         elif self.state == GS.PLAYING:
             if k == "r":
                 self._do_fade(self._restart)
-            elif k == "escape":
+            elif k in ("escape", "p"):
+                self.state = GS.PAUSED
+            elif k == "grave":
+                self._admin_mode = not self._admin_mode
+            elif self._admin_mode:
+                self._handle_admin_key(k)
+
+        elif self.state == GS.PAUSED:
+            if k in ("escape", "p"):
+                self.state = GS.PLAYING
+            elif k == "m":
                 self._do_fade(self._go_menu)
+            elif k == "grave":
+                self._admin_mode = not self._admin_mode
+            elif self._admin_mode:
+                self._handle_admin_key(k)
 
         elif self.state == GS.DEAD:
             if k in ("return", "enter", "r"):
@@ -445,6 +464,19 @@ class GameController:
             self.total_score += 800
             self.total_notes_found += 1
             sound.play("note")
+            collected_note = next(
+                (n for n in reversed(self.level.notes) if n.collected),
+                None,
+            )
+            if collected_note and collected_note.note_key:
+                nfx = NOTE_EFFECTS.get(collected_note.note_key)
+                if nfx and nfx[0] != "none":
+                    self.player.apply_effect(nfx[0], nfx[1])
+                    _note_lab = {"speed_boost": "note_speed_boost",
+                                 "darkness": "note_darkness",
+                                 "invert_controls": "note_invert",
+                                 "shield": "note_shield"}
+                    self._set_lab_msg(_note_lab.get(nfx[0], nfx[0]))
 
         if self.level._glitch_countdown > 0:
             self._shake(8)
@@ -582,6 +614,29 @@ class GameController:
             self._lab_msg_timer = 5.0
             self._lab_msg_kind  = effect
 
+    def _handle_admin_key(self, k: str) -> None:
+        if k == "n" and self.player:
+            self._admin_noclip = not self._admin_noclip
+            self.player.noclip = self._admin_noclip
+        elif k == "b" and self.player:
+            self._admin_speed = not self._admin_speed
+            if self._admin_speed:
+                self.player.apply_effect("speed_boost", 9999.0)
+            else:
+                self.player.effects.pop("speed_boost", None)
+        elif k == "k" and self.level:
+            for e in self.level.enemies:
+                e.alive = False
+        elif k == "c" and self.level and self.player:
+            for note in self.level.notes:
+                if not note.collected:
+                    note.collected = True
+                    self.player.notes_found += 1
+                    self.total_score += 800
+                    self.total_notes_found += 1
+        elif k in ("1", "2", "3", "4", "5"):
+            self._do_fade(lambda n=int(k): self._begin_level(n))
+
     # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
@@ -599,11 +654,11 @@ class GameController:
         elif self.state == GS.INTRO:
             self.ui.draw_level_intro()
 
-        elif self.state in (GS.PLAYING, GS.DEAD):
+        elif self.state in (GS.PLAYING, GS.DEAD, GS.PAUSED):
             self._draw_world(ox, oy)
             self.particles.render(self.canvas)
 
-            if self.state == GS.PLAYING:
+            if self.state in (GS.PLAYING, GS.PAUSED):
                 invert_rem = (self.player.effects.get("invert_controls", 0.0)
                               if self.player else 0.0)
                 dark_rem   = (self.player.effects.get("darkness", 0.0)
@@ -627,6 +682,8 @@ class GameController:
                     self.ui.draw_powerup_flash(self._powerup_flash * 3)
                 if self._note_timer > 0 and self._note_lines:
                     self.ui.draw_note_popup(self._note_lines, self._note_timer)
+                if self.state == GS.PAUSED:
+                    self.ui.draw_pause()
 
             elif self.state == GS.DEAD:
                 self.ui.draw_death(self._death_timer)
@@ -640,6 +697,12 @@ class GameController:
 
         elif self.state == GS.LEADERBOARD:
             self.ui.draw_leaderboard(self._leaderboard_scores)
+
+        if self._admin_mode:
+            noclip_flag = self.player.noclip if self.player else False
+            self.ui.draw_admin_panel(
+                self.current_lvl, self._admin_noclip, self._admin_speed,
+            )
 
         if self.fade.active:
             self.ui.draw_fade(self.fade.alpha)
@@ -658,8 +721,9 @@ class GameController:
         re = min(re, self.level.rows)
 
         self.canvas.create_rectangle(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self.ui.draw_starfield_raw(self.canvas, self._tick_count)
         self.canvas.create_rectangle(
-            0, HUD_H, CANVAS_W, CANVAS_H, fill="#1c1c28", outline="")
+            0, HUD_H, CANVAS_W, CANVAS_H, fill="#0a0a10", outline="")
 
         t = time.perf_counter()
 
@@ -718,19 +782,6 @@ class GameController:
                 ex = fe.gx * TILE_SIZE + ox
                 ey = fe.gy * TILE_SIZE + oy
                 self._draw_exit_tile(ex, ey, "#00cc44", is_fake=True)
-
-        # Trigger tiles — faint pulsing rune so player senses danger
-        for trig in self.level.triggers:
-            if not trig.triggered:
-                tx = trig.gx * TILE_SIZE + ox
-                ty = trig.gy * TILE_SIZE + oy
-                pulse = 0.3 + 0.25 * abs(math.sin(t * 1.8))
-                v = int(pulse * 80)
-                col = f"#{v:02x}00{v+30:02x}"
-                self.canvas.create_rectangle(
-                    tx + 4, ty + 4, tx + TILE_SIZE - 4, ty + TILE_SIZE - 4,
-                    fill=col, outline=f"#44005a", width=1,
-                )
 
         # Notes
         for note in self.level.notes:
