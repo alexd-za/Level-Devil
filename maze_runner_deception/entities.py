@@ -89,20 +89,6 @@ class MovingExit(Exit):
         self.ghost_trail: list[tuple[int, int]] = []
 
 
-class Powerup(Entity):
-    """Collectible powerup that grants a temporary effect."""
-    COLORS = {
-        "speed_boost": "#00ddff",
-        "shield":      "#aaff44",
-    }
-
-    def __init__(self, gx: int, gy: int, kind: str, duration: float = 5.0):
-        super().__init__(gx, gy, color=Powerup.COLORS.get(kind, "#ffffff"))
-        self.kind      = kind
-        self.duration  = duration
-        self.collected = False
-        self._anim_t   = 0.0
-
 
 class Note(Entity):
     """Collectible lore fragment scattered through the maze."""
@@ -215,7 +201,7 @@ class Player:
         self.squish_x = 1.0
         self.squish_y = 1.0
 
-    def update(self, dx: float, dy: float, dt: float, walls: list[Wall]) -> None:
+    def update(self, dx: float, dy: float, dt: float, wall_map: dict) -> None:
         if not self.alive:
             self._tick_death_flash(dt)
             return
@@ -232,12 +218,24 @@ class Player:
         step = spd * dt
 
         new_gx = self.gx + dx * step
-        if not self._collides(new_gx, self.gy, walls):
+        if not self._collides(new_gx, self.gy, wall_map):
             self.gx = new_gx
+        elif dy == 0 and dx != 0:
+            frac = self.gy - math.floor(self.gy)
+            if frac < 0.28:
+                self.gy = max(0.0, self.gy - min(frac, step * 1.5))
+            elif frac > 0.72:
+                self.gy = self.gy + min(1.0 - frac, step * 1.5)
 
         new_gy = self.gy + dy * step
-        if not self._collides(self.gx, new_gy, walls):
+        if not self._collides(self.gx, new_gy, wall_map):
             self.gy = new_gy
+        elif dx == 0 and dy != 0:
+            frac = self.gx - math.floor(self.gx)
+            if frac < 0.28:
+                self.gx = max(0.0, self.gx - min(frac, step * 1.5))
+            elif frac > 0.72:
+                self.gx = self.gx + min(1.0 - frac, step * 1.5)
 
         self.gx = max(0.0, self.gx)
         self.gy = max(0.0, self.gy)
@@ -267,11 +265,15 @@ class Player:
         v = int(abs(math.sin(self.flash_phase)) * 255)
         return f"#{v:02x}0000"
 
-    def _collides(self, gx: float, gy: float, walls: list[Wall]) -> bool:
+    def _collides(self, gx: float, gy: float, wall_map: dict) -> bool:
         px = gx * TILE_SIZE + PLAYER_GAP
         py = gy * TILE_SIZE + PLAYER_GAP
         pr = Rect(px, py, PLAYER_SIZE, PLAYER_SIZE)
-        for w in walls:
-            if w.solid and pr.intersects(w.rect):
-                return True
+        tx = int(gx)
+        ty = int(gy)
+        for cy in range(ty - 1, ty + 3):
+            for cx in range(tx - 1, tx + 3):
+                w = wall_map.get((cx, cy))
+                if w and w.solid and pr.intersects(w.rect):
+                    return True
         return False
