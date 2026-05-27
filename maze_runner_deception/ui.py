@@ -279,6 +279,7 @@ class UIManager:
     def draw_hud(self, level: int, elapsed: float, score: int,
                  deaths: int, hint: str,
                  invert_remaining: float, dark_remaining: float,
+                 speed_remaining: float, shield_remaining: float,
                  notes_found: int) -> None:
         self.clear()
 
@@ -301,20 +302,40 @@ class UIManager:
             self._t(12, 26, f"docs: {notes_found}",
                     font=("Courier", 9), fill="#886600", anchor="nw")
 
-        if invert_remaining > 0:
-            pulse = YELLOW if int(invert_remaining * 4) % 2 == 0 else ORANGE
-            self._t(CANVAS_W // 2, CANVAS_H - 48,
-                    f"⚠  CONTROLS INVERTED  [{invert_remaining:.1f}s]  ⚠",
-                    font=("Courier", 12, "bold"), fill=pulse, anchor="center")
+        # Active effect banners stacked at bottom
+        by = CANVAS_H - 18
+        if hint:
+            self._t(CANVAS_W // 2, by, hint,
+                    font=("Courier", 9, "italic"), fill=FG_DIM, anchor="center")
+            by -= 20
+
+        if speed_remaining > 0:
+            self._t(CANVAS_W // 2, by,
+                    f"▶▶  SPEED BOOST  [{speed_remaining:.1f}s]",
+                    font=("Courier", 11, "bold"), fill=CYAN, anchor="center")
+            by -= 20
+
+        if shield_remaining > 0:
+            self._t(CANVAS_W // 2, by,
+                    f"◆  SHIELD ACTIVE  [{shield_remaining:.1f}s]  ◆",
+                    font=("Courier", 11, "bold"), fill="#aaff44", anchor="center")
+            by -= 20
 
         if dark_remaining > 0:
-            self._t(CANVAS_W // 2, CANVAS_H - 68,
+            self._t(CANVAS_W // 2, by,
                     f"LIGHTS OUT  [{dark_remaining:.1f}s]",
                     font=("Courier", 11, "bold"), fill=PURPLE, anchor="center")
+            by -= 20
 
-        if hint:
-            self._t(CANVAS_W // 2, CANVAS_H - 16, hint,
-                    font=("Courier", 9, "italic"), fill=FG_DIM, anchor="center")
+        if invert_remaining > 0:
+            import time as _t
+            blink = int(_t.perf_counter() * 5) % 2 == 0
+            pulse = YELLOW if blink else ORANGE
+            self._r(60, by - 14, CANVAS_W - 60, by + 4,
+                    fill="#1a0800", outline=ORANGE, width=1)
+            self._t(CANVAS_W // 2, by - 5,
+                    f"⚠  CONTROLS INVERTED  [{invert_remaining:.1f}s]  ⚠",
+                    font=("Courier", 13, "bold"), fill=pulse, anchor="center")
 
     # ------------------------------------------------------------------
     # Death overlay
@@ -396,36 +417,68 @@ class UIManager:
                 fill="", outline=FG_DIM, width=1)
 
         visible = self._tw.visible_lines()
-        cy = 44
+
+        # Measure total height first so we can auto-scroll as text grows
+        LINE_GAP = 6
+        line_heights = []
         for i, line in enumerate(visible):
             if not line:
-                cy += 14
+                line_heights.append(10)
                 continue
             if "BREACH" in line or "DETECTED" in line:
-                col, size = ACCENT, 15
+                size = 14
             elif i == 0:
-                col, size = ACCENT, 13
+                size = 13
             elif "Group D" in line or "forever" in line:
-                col, size = PURPLE, 12
+                size = 11
             elif "See you" in line or "tomorrow" in line:
-                col, size = ORANGE, 12
+                size = 11
             elif line.startswith("(") and ")" in line:
-                col, size = FG_DIM, 9
+                size = 9
             elif "chose" in line.lower() or "consent" in line.lower():
-                col, size = YELLOW, 11
-            elif "not a lie" in line:
-                col, size = GREEN, 10
-            elif line.startswith("[LOADING]"):
-                col, size = FG_DIM, 10
+                size = 11
             else:
-                col, size = FG_MID, 10
-            style = "italic" if line.startswith("(") else ("bold" if size >= 14 else "normal")
-            self._t(CANVAS_W // 2, cy, line,
-                    font=("Courier", size, style), fill=col, anchor="center")
-            cy += size + 8
+                size = 10
+            line_heights.append(size + LINE_GAP)
+
+        total_h = sum(line_heights)
+        view_h  = CANVAS_H - 80  # reserve top/bottom border
+        # scroll: as total_h exceeds view_h, shift upward
+        scroll  = max(0, total_h - view_h)
+        cy      = 36 - scroll
+
+        for i, line in enumerate(visible):
+            lh = line_heights[i]
+            draw_y = cy + lh // 2
+            if 24 <= draw_y <= CANVAS_H - 50:  # only draw if in viewport
+                if not line:
+                    pass
+                else:
+                    if "BREACH" in line or "DETECTED" in line:
+                        col, size = ACCENT, 14
+                    elif i == 0:
+                        col, size = ACCENT, 13
+                    elif "Group D" in line or "forever" in line:
+                        col, size = PURPLE, 11
+                    elif "See you" in line or "tomorrow" in line:
+                        col, size = ORANGE, 11
+                    elif line.startswith("(") and ")" in line:
+                        col, size = FG_DIM, 9
+                    elif "chose" in line.lower() or "consent" in line.lower():
+                        col, size = YELLOW, 11
+                    elif "not a lie" in line:
+                        col, size = GREEN, 10
+                    elif line.startswith("[LOADING]"):
+                        col, size = FG_DIM, 10
+                    else:
+                        col, size = FG_MID, 10
+                    style = "italic" if line.startswith("(") else ("bold" if size >= 13 else "normal")
+                    self._t(CANVAS_W // 2, draw_y, line,
+                            font=("Courier", size, style), fill=col, anchor="center")
+            cy += lh
 
         if self._tw.is_done:
-            self._t(CANVAS_W // 2, CANVAS_H - 40, "[ ENTER — main menu ]",
+            self._t(CANVAS_W // 2, CANVAS_H - 34, "[ ENTER — main menu ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
@@ -527,3 +580,9 @@ class UIManager:
             return
         sp = "gray25" if intensity < 0.5 else "gray50"
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=CYAN, outline="", stipple=sp)
+
+    def draw_powerup_flash(self, intensity: float) -> None:
+        if intensity <= 0:
+            return
+        sp = "gray25" if intensity < 0.5 else "gray50"
+        self._r(0, 0, CANVAS_W, CANVAS_H, fill="#00ffaa", outline="", stipple=sp)

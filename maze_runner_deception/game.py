@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 from entities import (
     Player, Wall, FakeWall, Exit, FakeExit, TriggerTile, MovingExit,
-    Note, Enemy, TILE_SIZE, PLAYER_SIZE, PLAYER_GAP,
+    Note, Powerup, Enemy, TILE_SIZE, PLAYER_SIZE, PLAYER_GAP,
 )
 from levels import (
     Level, make_level,
@@ -233,7 +233,8 @@ class GameController:
         self._hint_shown   = False
         self._hint_timer   = 0.0
 
-        self._invert_flash = 0.0
+        self._invert_flash  = 0.0
+        self._powerup_flash = 0.0
         self._glitch_frames = 0
 
         self._shake_rem = 0
@@ -353,7 +354,9 @@ class GameController:
         self.fade.update(dt)
 
         if self._invert_flash > 0:
-            self._invert_flash = max(0.0, self._invert_flash - dt)
+            self._invert_flash  = max(0.0, self._invert_flash - dt)
+        if self._powerup_flash > 0:
+            self._powerup_flash = max(0.0, self._powerup_flash - dt)
         if self._note_timer > 0:
             self._note_timer = max(0.0, self._note_timer - dt)
 
@@ -399,14 +402,23 @@ class GameController:
 
         event = self.level.update(dt, self.player)
         if event == "killed":
-            self._trigger_death()
+            if self.player and self.player.has_effect("shield"):
+                # Shield absorbs one hit
+                del self.player.effects["shield"]
+                self._shake(6)
+                self._invert_flash = 0.2
+            else:
+                self._trigger_death()
         elif event == "level_complete":
             self._trigger_complete()
         elif event == "invert_applied":
-            self._shake(4)
-            self._invert_flash = 0.3
+            self._shake(8)
+            self._invert_flash = 0.6
         elif event == "darkness_applied":
+            self._shake(5)
+        elif event == "powerup_collected":
             self._shake(3)
+            self._powerup_flash = 0.5
         elif event == "note_collected":
             if self.level._last_note:
                 self._note_lines = list(self.level._last_note)
@@ -555,15 +567,21 @@ class GameController:
                               if self.player else 0.0)
                 dark_rem   = (self.player.effects.get("darkness", 0.0)
                               if self.player else 0.0)
+                speed_rem  = (self.player.effects.get("speed_boost", 0.0)
+                              if self.player else 0.0)
+                shield_rem = (self.player.effects.get("shield", 0.0)
+                              if self.player else 0.0)
                 self.ui.draw_hud(
                     self.current_lvl, self._level_timer, self.total_score,
                     self.player.deaths if self.player else 0,
                     self._hint_text if self._hint_shown else "",
-                    invert_rem, dark_rem,
+                    invert_rem, dark_rem, speed_rem, shield_rem,
                     self.player.notes_found if self.player else 0,
                 )
                 if self._invert_flash > 0:
-                    self.ui.draw_invert_flash(self._invert_flash * 4)
+                    self.ui.draw_invert_flash(self._invert_flash * 3)
+                if self._powerup_flash > 0:
+                    self.ui.draw_powerup_flash(self._powerup_flash * 3)
                 if self._note_timer > 0 and self._note_lines:
                     self.ui.draw_note_popup(self._note_lines, self._note_timer)
 
@@ -660,15 +678,25 @@ class GameController:
                 ey = fe.gy * TILE_SIZE + oy
                 self._draw_exit_tile(ex, ey, "#00cc44", is_fake=True)
 
-        # Trigger tiles (subtle floor rune when visible)
+        # Trigger tiles — faint pulsing rune so player senses danger
         for trig in self.level.triggers:
-            if trig.visible and not trig.triggered:
-                ex = trig.gx * TILE_SIZE + ox
-                ey = trig.gy * TILE_SIZE + oy
+            if not trig.triggered:
+                tx = trig.gx * TILE_SIZE + ox
+                ty = trig.gy * TILE_SIZE + oy
+                pulse = 0.3 + 0.25 * abs(math.sin(t * 1.8))
+                v = int(pulse * 80)
+                col = f"#{v:02x}00{v+30:02x}"
                 self.canvas.create_rectangle(
-                    ex + 3, ey + 3, ex + TILE_SIZE - 3, ey + TILE_SIZE - 3,
-                    fill="#1a0020", outline="#440055", width=1,
+                    tx + 4, ty + 4, tx + TILE_SIZE - 4, ty + TILE_SIZE - 4,
+                    fill=col, outline=f"#44005a", width=1,
                 )
+
+        # Powerups
+        for pu in self.level.powerups:
+            if not pu.collected:
+                px_ = pu.gx * TILE_SIZE + ox
+                py_ = pu.gy * TILE_SIZE + oy
+                self._draw_powerup(px_, py_, pu, t)
 
         # Notes
         for note in self.level.notes:
@@ -770,6 +798,36 @@ class GameController:
         self.canvas.create_text(
             nx + ts // 2, ny + ts // 2, text="!",
             font=("Courier", 8, "bold"), fill=col,
+        )
+
+    def _draw_powerup(self, px_: float, py_: float,
+                       pu: Powerup, t: float) -> None:
+        ts    = TILE_SIZE
+        cx    = px_ + ts / 2
+        cy    = py_ + ts / 2
+        pulse = 0.5 + 0.5 * math.sin(t * 6.0)
+        col   = pu.color
+        glow  = int(40 + pulse * 60)
+
+        if pu.kind == "speed_boost":
+            bg_col = f"#00{glow:02x}{min(255, glow+140):02x}"
+            symbol = "▶▶"
+        else:  # shield
+            bg_col = f"#{min(255, glow+80):02x}{min(255, glow+120):02x}00"
+            symbol = "◆"
+
+        r = 8 + pulse * 2
+        self.canvas.create_oval(
+            cx - r - 2, cy - r - 2, cx + r + 2, cy + r + 2,
+            fill="", outline=col, width=1,
+        )
+        self.canvas.create_oval(
+            cx - r, cy - r, cx + r, cy + r,
+            fill=bg_col, outline="",
+        )
+        self.canvas.create_text(
+            cx, cy, text=symbol,
+            font=("TkDefaultFont", 7, "bold"), fill=col,
         )
 
     # ------------------------------------------------------------------
