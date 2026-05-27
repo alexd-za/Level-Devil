@@ -158,7 +158,7 @@ class UIManager:
         self._l(100, 448, 600, 448, fill=FG_DIM, width=1)
 
         self._t(CANVAS_W // 2, 472,
-                "WASD / Arrows — move   |   R — restart   |   ESC — menu",
+                "WASD / Arrows — move   |   R — restart   |   P / ESC — pause",
                 font=("Courier", 10), fill=FG_DIM, anchor="center")
         self._t(CANVAS_W // 2, 492, "H — help   |   L — leaderboard",
                 font=("Courier", 10), fill=FG_DIM, anchor="center")
@@ -194,7 +194,7 @@ class UIManager:
         controls = [
             ("MOVEMENT",   "WASD  or  Arrow Keys"),
             ("RESTART",    "R  or  ENTER (death screen)"),
-            ("MAIN MENU",  "ESC"),
+            ("PAUSE",      "P  or  ESC  (during play)"),
             ("THIS GUIDE", "H  (from main menu)"),
         ]
         cy = 144
@@ -257,6 +257,15 @@ class UIManager:
     def skip_typewriter(self) -> None:
         self._tw.skip()
 
+    def _intro_line_style(self, i: int, line: str):
+        if i == 0:
+            return ACCENT, 18, "bold"
+        if line.startswith("[ORACLE") or line.startswith("[FRAGMENT"):
+            return PURPLE, 10, "italic"
+        if line.startswith("("):
+            return FG_DIM, 10, "italic"
+        return FG_MAIN, 12, "normal"
+
     def draw_level_intro(self) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
@@ -264,33 +273,41 @@ class UIManager:
         self._r(24, 24, CANVAS_W - 24, CANVAS_H - 24, fill="", outline=FG_DIM, width=1)
 
         visible = self._tw.visible_lines()
-        cy = 215
+
+        heights = []
         for i, line in enumerate(visible):
             if not line:
-                cy += 14
-                continue
-            if i == 0:
-                col, size, style = ACCENT, 18, "bold"
-            elif line.startswith("[ORACLE") or line.startswith("[FRAGMENT"):
-                col, size, style = PURPLE, 10, "italic"
-            elif line.startswith("("):
-                col, size, style = FG_DIM, 10, "italic"
+                heights.append(14)
             else:
-                col, size, style = FG_MAIN, 12, "normal"
-            self._t(CANVAS_W // 2, cy, line,
-                    font=("Courier", size, style), fill=col, anchor="center")
-            cy += size + 11
+                _, size, _ = self._intro_line_style(i, line)
+                heights.append(size + 11)
+        total_h = sum(heights)
+
+        top    = 60
+        bottom = CANVAS_H - 80
+        view_h = bottom - top
+        if total_h <= view_h:
+            cy = top + (view_h - total_h) // 2
+        else:
+            cy = bottom - total_h
+
+        for i, line in enumerate(visible):
+            lh = heights[i]
+            if line and 40 <= cy <= bottom:
+                col, size, style = self._intro_line_style(i, line)
+                self._t(CANVAS_W // 2, cy + lh // 2, line,
+                        font=("Courier", size, style), fill=col, anchor="center")
+            cy += lh
 
         if self._tw.is_done:
-            # Blinking "press ENTER" prompt
             import time as _time
             blink_on = int(_time.perf_counter() * 2) % 2 == 0
             prompt_col = YELLOW if blink_on else FG_DIM
-            self._t(CANVAS_W // 2, CANVAS_H - 54,
+            self._t(CANVAS_W // 2, CANVAS_H - 50,
                     "[ ENTER  TO  BEGIN ]",
                     font=("Courier", 13, "bold"), fill=prompt_col, anchor="center")
         else:
-            self._t(CANVAS_W // 2, CANVAS_H - 54,
+            self._t(CANVAS_W // 2, CANVAS_H - 50,
                     "[ ENTER to skip ]",
                     font=("Courier", 10), fill=FG_DIM, anchor="center")
 
@@ -384,24 +401,30 @@ class UIManager:
                 stipple=stipple if stipple else "")
 
         visible = self._tw.visible_lines()
-        cy = 265
-        for i, line in enumerate(visible):
-            if not line:
-                cy += 12
-                continue
+
+        def _style(i, line):
             if i == 0:
-                col, size = ACCENT, 17
-            elif any(w in line for w in ("SECURITY", "CONTACT", "ORACLE", "UNIT")):
-                col, size = ORANGE, 11
-            else:
-                col, size = FG_MID, 11
-            style = "bold" if i == 0 else "normal"
-            self._t(CANVAS_W // 2, cy, line,
-                    font=("Courier", size, style), fill=col, anchor="center")
-            cy += size + 12
+                return ACCENT, 17
+            if any(w in line for w in ("SECURITY", "CONTACT", "ORACLE", "UNIT")):
+                return ORANGE, 11
+            return FG_MID, 11
+
+        heights = [12 if not ln else _style(i, ln)[1] + 12
+                   for i, ln in enumerate(visible)]
+        total_h = sum(heights)
+        cy = max(120, (CANVAS_H - 70 - total_h) // 2)
+
+        for i, line in enumerate(visible):
+            lh = heights[i]
+            if line:
+                col, size = _style(i, line)
+                style = "bold" if i == 0 else "normal"
+                self._t(CANVAS_W // 2, cy + lh // 2, line,
+                        font=("Courier", size, style), fill=col, anchor="center")
+            cy += lh
 
         if self._tw.is_done:
-            self._t(CANVAS_W // 2, cy + 26,
+            self._t(CANVAS_W // 2, CANVAS_H - 50,
                     "[ ENTER / R — retry   ·   ESC — main menu ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
@@ -416,28 +439,38 @@ class UIManager:
         self._r(32, 32, CANVAS_W - 32, CANVAS_H - 32, fill="", outline=GREEN, width=1)
 
         visible = self._tw.visible_lines()
-        cy = 190
-        for i, line in enumerate(visible):
-            if not line:
-                cy += 18
-                continue
+
+        def _style(i, line):
             if i == 0:
-                col, size = GREEN, 19
-            elif "BREACH" in line or "DETECTED" in line:
-                col, size = ACCENT, 16
-            elif line.startswith("("):
-                col, size = FG_DIM, 10
-            else:
-                col, size = FG_MAIN, 12
-            style = "bold" if size >= 16 else ("italic" if line.startswith("(") else "normal")
-            self._t(CANVAS_W // 2, cy, line,
-                    font=("Courier", size, style), fill=col, anchor="center")
-            cy += size + 14
+                return GREEN, 19
+            if "BREACH" in line or "DETECTED" in line:
+                return ACCENT, 16
+            if line.startswith("("):
+                return FG_DIM, 10
+            return FG_MAIN, 12
+
+        heights = [16 if not ln else _style(i, ln)[1] + 13
+                   for i, ln in enumerate(visible)]
+        total_h = sum(heights)
+
+        top    = 70
+        bottom = CANVAS_H - 96
+        view_h = bottom - top
+        cy = top + (view_h - total_h) // 2 if total_h <= view_h else bottom - total_h
+
+        for i, line in enumerate(visible):
+            lh = heights[i]
+            if line and 50 <= cy <= bottom:
+                col, size = _style(i, line)
+                style = "bold" if size >= 16 else ("italic" if line.startswith("(") else "normal")
+                self._t(CANVAS_W // 2, cy + lh // 2, line,
+                        font=("Courier", size, style), fill=col, anchor="center")
+            cy += lh
 
         if self._tw.is_done:
-            self._t(CANVAS_W // 2, cy + 16, f"+ {score_gained:,} pts",
+            self._t(CANVAS_W // 2, CANVAS_H - 74, f"+ {score_gained:,} pts",
                     font=("Courier", 14, "bold"), fill=YELLOW, anchor="center")
-            self._t(CANVAS_W // 2, CANVAS_H - 55, "[ ENTER to continue ]",
+            self._t(CANVAS_W // 2, CANVAS_H - 50, "[ ENTER to continue ]",
                     font=("Courier", 11), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
@@ -523,27 +556,46 @@ class UIManager:
     # Note popup
     # ------------------------------------------------------------------
 
-    def draw_note_popup(self, lines: list[str], timer: float) -> None:
-        alpha    = min(1.0, timer / 0.4) if timer > 5.6 else min(1.0, timer / 1.0)
-        panel_h  = 20 + len(lines) * 15 + 10
-        py       = CANVAS_H - panel_h - 52
-        stipple  = "" if alpha > 0.85 else ("gray75" if alpha > 0.5 else "gray50")
-        base_kw  = {"stipple": stipple} if stipple else {}
+    def draw_note_reading(self, lines: list[str]) -> None:
+        self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray50")
 
-        self._r(42, py - 2, CANVAS_W - 42, py + panel_h + 2,
-                fill="#000000", outline="", **base_kw)
-        self._r(44, py, CANVAS_W - 44, py + panel_h,
-                fill="#070705", outline=YELLOW, width=1, **base_kw)
+        line_h   = 19
+        body     = [ln for ln in lines]
+        inner_h  = 56 + len(body) * line_h + 30
+        pw       = 460
+        ph       = min(inner_h, CANVAS_H - 80)
+        px       = (CANVAS_W - pw) // 2
+        py       = (CANVAS_H - ph) // 2
 
-        hdr_col = YELLOW if alpha > 0.6 else "#887700"
-        self._t(CANVAS_W // 2, py + 10,
-                "▶  CLASSIFIED DOCUMENT RETRIEVED  ◀",
-                font=("Courier", 9, "bold"), fill=hdr_col, anchor="center")
+        self._r(px - 3, py - 3, px + pw + 3, py + ph + 3, fill="#000000", outline="")
+        self._r(px, py, px + pw, py + ph, fill="#0a0a06", outline=YELLOW, width=2)
+        self._r(px + 4, py + 4, px + pw - 4, py + 6, fill=YELLOW, outline="")
 
-        for i, line in enumerate(lines):
-            col  = YELLOW if line.startswith("[") else (FG_DIM if line == "" else FG_MAIN)
-            self._t(CANVAS_W // 2, py + 24 + i * 15, line,
-                    font=("Courier", 9), fill=col, anchor="center")
+        self._t(CANVAS_W // 2, py + 22,
+                "CLASSIFIED DOCUMENT RETRIEVED",
+                font=("Courier", 11, "bold"), fill=YELLOW, anchor="center")
+        self._l(px + 24, py + 38, px + pw - 24, py + 38, fill="#5a4a00", width=1)
+
+        cy = py + 56
+        for line in body:
+            if line.startswith("["):
+                col, style = YELLOW, "bold"
+            elif line.startswith("—") or line.startswith("- "):
+                col, style = "#bb9933", "italic"
+            elif line == "":
+                col, style = FG_DIM, "normal"
+            else:
+                col, style = FG_MAIN, "normal"
+            self._t(CANVAS_W // 2, cy, line,
+                    font=("Courier", 10, style), fill=col, anchor="center")
+            cy += line_h
+
+        import time as _time
+        blink_on = int(_time.perf_counter() * 2) % 2 == 0
+        prompt_col = GREEN if blink_on else FG_DIM
+        self._t(CANVAS_W // 2, py + ph - 16,
+                "[ ENTER to continue ]",
+                font=("Courier", 10, "bold"), fill=prompt_col, anchor="center")
 
     # ------------------------------------------------------------------
     # Lab message corner popup
