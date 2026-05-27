@@ -320,7 +320,11 @@ class UIManager:
                  invert_remaining: float, dark_remaining: float,
                  speed_remaining: float, shield_remaining: float,
                  notes_found: int,
-                 lab_msg: str = "", lab_timer: float = 0.0) -> None:
+                 lab_msg: str = "", lab_timer: float = 0.0,
+                 lab_kind: str = "",
+                 slow_remaining: float = 0.0,
+                 paranoia_remaining: float = 0.0,
+                 gravity_remaining: float = 0.0) -> None:
         self.clear()
 
         m, s = divmod(int(elapsed), 60)
@@ -340,8 +344,12 @@ class UIManager:
             t_col = YELLOW
         else:
             t_col = FG_MID
+        t_bold = "bold" if elapsed > 90 else "normal"
+        if paranoia_remaining > 0:
+            t_col = ORANGE
+            t_bold = "bold"
         self._t(CANVAS_W // 2, 8, time_str,
-                font=("Courier", 11, "bold" if elapsed > 90 else "normal"), fill=t_col, anchor="n")
+                font=("Courier", 11, t_bold), fill=t_col, anchor="n")
         self._t(CANVAS_W - 10, 8, f"{score:07d}",
                 font=("Courier", 11), fill=FG_MID, anchor="ne")
         self._t(CANVAS_W - 10, 24, f"deaths: {deaths}",
@@ -363,6 +371,12 @@ class UIManager:
                     font=("Courier", 11, "bold"), fill=CYAN, anchor="center")
             by -= 20
 
+        if slow_remaining > 0:
+            self._t(CANVAS_W // 2, by,
+                    f"▮▮  INHIBITOR ACTIVE  [{slow_remaining:.1f}s]",
+                    font=("Courier", 11, "bold"), fill="#4488ff", anchor="center")
+            by -= 20
+
         if shield_remaining > 0:
             self._t(CANVAS_W // 2, by,
                     f"◆  SHIELD ACTIVE  [{shield_remaining:.1f}s]  ◆",
@@ -375,9 +389,26 @@ class UIManager:
                     font=("Courier", 11, "bold"), fill=PURPLE, anchor="center")
             by -= 20
 
+        if gravity_remaining > 0:
+            self._t(CANVAS_W // 2, by,
+                    f"↕  INERTIA INVERTED  [{gravity_remaining:.1f}s]",
+                    font=("Courier", 11, "bold"), fill="#44dd22", anchor="center")
+            by -= 20
+
+        if paranoia_remaining > 0:
+            import time as _t2
+            blink = int(_t2.perf_counter() * 4) % 2 == 0
+            pulse = "#ffaa00" if blink else "#995500"
+            self._r(100, by - 14, CANVAS_W - 100, by + 4,
+                    fill="#150800", outline="#ff8800", width=1)
+            self._t(CANVAS_W // 2, by - 5,
+                    f"◈  CALIBRATION ACTIVE  [{paranoia_remaining:.1f}s]",
+                    font=("Courier", 11, "bold"), fill=pulse, anchor="center")
+            by -= 20
+
         if invert_remaining > 0:
-            import time as _t
-            blink = int(_t.perf_counter() * 5) % 2 == 0
+            import time as _t3
+            blink = int(_t3.perf_counter() * 5) % 2 == 0
             pulse = YELLOW if blink else ORANGE
             self._r(60, by - 14, CANVAS_W - 60, by + 4,
                     fill="#1a0800", outline=ORANGE, width=1)
@@ -386,7 +417,7 @@ class UIManager:
                     font=("Courier", 13, "bold"), fill=pulse, anchor="center")
 
         if lab_msg and lab_timer > 0:
-            self.draw_lab_message(lab_msg, lab_timer)
+            self.draw_lab_message(lab_msg, lab_timer, lab_kind)
 
     # ------------------------------------------------------------------
     # Death overlay
@@ -559,77 +590,120 @@ class UIManager:
     def draw_note_reading(self, lines: list[str]) -> None:
         self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray50")
 
-        line_h   = 19
-        body     = [ln for ln in lines]
-        inner_h  = 56 + len(body) * line_h + 30
-        pw       = 460
-        ph       = min(inner_h, CANVAS_H - 80)
+        line_h   = 20
+        non_empty = [ln for ln in lines if ln]
+        inner_h  = 72 + len(lines) * line_h + 36
+        pw       = 480
+        ph       = min(inner_h, CANVAS_H - 60)
         px       = (CANVAS_W - pw) // 2
         py       = (CANVAS_H - ph) // 2
 
-        self._r(px - 3, py - 3, px + pw + 3, py + ph + 3, fill="#000000", outline="")
-        self._r(px, py, px + pw, py + ph, fill="#0a0a06", outline=YELLOW, width=2)
-        self._r(px + 4, py + 4, px + pw - 4, py + 6, fill=YELLOW, outline="")
+        self._r(px - 4, py - 4, px + pw + 4, py + ph + 4,
+                fill="#000000", outline="")
+        self._r(px - 1, py - 1, px + pw + 1, py + ph + 1,
+                fill="", outline="#5a4000", width=1)
+        self._r(px, py, px + pw, py + ph,
+                fill="#080704", outline=YELLOW, width=2)
 
-        self._t(CANVAS_W // 2, py + 22,
-                "CLASSIFIED DOCUMENT RETRIEVED",
-                font=("Courier", 11, "bold"), fill=YELLOW, anchor="center")
-        self._l(px + 24, py + 38, px + pw - 24, py + 38, fill="#5a4a00", width=1)
+        self._r(px + 6, py + 6, px + pw - 6, py + 8,
+                fill=YELLOW, outline="")
+        self._r(px + 6, py + ph - 8, px + pw - 6, py + ph - 6,
+                fill="#886600", outline="")
 
-        cy = py + 56
-        for line in body:
-            if line.startswith("["):
-                col, style = YELLOW, "bold"
+        self._r(px + 10, py + 16, px + pw - 10, py + 52,
+                fill="#0a0902", outline="#443300", width=1)
+        self._t(CANVAS_W // 2, py + 26,
+                "— CLASSIFIED DOCUMENT —",
+                font=("Courier", 9, "bold"), fill="#886600", anchor="center")
+        self._t(CANVAS_W // 2, py + 42,
+                "ORACLE RESEARCH DIVISION  |  EYES ONLY",
+                font=("Courier", 8), fill="#554400", anchor="center")
+
+        self._l(px + 20, py + 58, px + pw - 20, py + 58,
+                fill="#3a2800", width=1)
+
+        cy = py + 72
+        bottom_limit = py + ph - 34
+        for line in lines:
+            if cy + line_h > bottom_limit:
+                break
+            if line.startswith("[ DOCUMENT"):
+                col, size, style = "#ddaa00", 10, "bold"
+            elif line.startswith("[") and "]" in line:
+                col, size, style = YELLOW, 9, "bold"
             elif line.startswith("—") or line.startswith("- "):
-                col, style = "#bb9933", "italic"
+                col, size, style = "#cc9933", 10, "italic"
             elif line == "":
-                col, style = FG_DIM, "normal"
+                cy += line_h // 2
+                continue
             else:
-                col, style = FG_MAIN, "normal"
+                col, size, style = "#ccbba0", 10, "normal"
             self._t(CANVAS_W // 2, cy, line,
-                    font=("Courier", 10, style), fill=col, anchor="center")
+                    font=("Courier", size, style), fill=col, anchor="center")
             cy += line_h
 
         import time as _time
         blink_on = int(_time.perf_counter() * 2) % 2 == 0
-        prompt_col = GREEN if blink_on else FG_DIM
-        self._t(CANVAS_W // 2, py + ph - 16,
-                "[ ENTER to continue ]",
+        prompt_col = "#00dd66" if blink_on else "#005522"
+        self._r(px + 20, py + ph - 30, px + pw - 20, py + ph - 10,
+                fill="#030604", outline="#004422", width=1)
+        self._t(CANVAS_W // 2, py + ph - 20,
+                "[ ENTER  to continue ]",
                 font=("Courier", 10, "bold"), fill=prompt_col, anchor="center")
 
     # ------------------------------------------------------------------
     # Lab message corner popup
     # ------------------------------------------------------------------
 
-    def draw_lab_message(self, msg: str, timer: float) -> None:
+    _EFFECT_COLORS: dict = {
+        "invert_controls": ("#ff6600", "#0c0400", "#441000"),
+        "speed_boost":     ("#00ffcc", "#00100a", "#004433"),
+        "darkness":        ("#cc00ff", "#0d000d", "#330033"),
+        "shield":          ("#aaff44", "#070d00", "#223300"),
+        "slow_motion":     ("#4488ff", "#000a14", "#001844"),
+        "paranoia":        ("#ffaa00", "#0f0800", "#3a2000"),
+        "gravity":         ("#44dd22", "#010d00", "#103300"),
+        "static":          ("#dddddd", "#101010", "#3a3a3a"),
+    }
+
+    def draw_lab_message(self, msg: str, timer: float, kind: str = "") -> None:
         alpha = min(1.0, timer / 0.4) if timer > 4.6 else min(1.0, timer / 1.0)
         stipple = "" if alpha > 0.85 else ("gray75" if alpha > 0.5 else "gray50")
         base_kw = {"stipple": stipple} if stipple else {}
 
-        pw = 320
-        panel_h = 56
+        accent, bg, border = self._EFFECT_COLORS.get(kind, ("#cc3300", "#0c0400", "#441000"))
+
+        pw = 340
+        panel_h = 62
         px = 8
-        py = CANVAS_H - HUD_H - panel_h - 62
+        py = CANVAS_H - HUD_H - panel_h - 58
 
         self._r(px, py, px + pw, py + panel_h,
                 fill="#000000", outline="", **base_kw)
         self._r(px + 4, py, px + 7, py + panel_h,
-                fill="#cc3300", outline="", **base_kw)
+                fill=accent, outline="", **base_kw)
         self._r(px + 7, py, px + pw, py + panel_h,
-                fill="#0c0400", outline="#441000", width=1, **base_kw)
-        self._l(px + 7, py + 18, px + pw - 2, py + 18,
-                fill="#331100", width=1)
+                fill=bg, outline=border, width=1, **base_kw)
+        self._l(px + 7, py + 20, px + pw - 2, py + 20,
+                fill=border, width=1)
 
-        hdr_col = "#ff5500" if alpha > 0.7 else "#882200"
-        self._t(px + 8 + (pw - 8) // 2, py + 9,
+        import time as _t
+        scan = int(_t.perf_counter() * 60) % (pw - 14)
+        self._l(px + 7 + scan, py, px + 7 + scan, py + 20,
+                fill=accent, width=1)
+
+        hdr_col = accent if alpha > 0.7 else border
+        self._t(px + 7 + (pw - 7) // 2, py + 10,
                 "◀  FACILITY LOG  ▶",
                 font=("Courier", 8, "bold"), fill=hdr_col, anchor="center")
 
-        msg_col = "#ee6600" if alpha > 0.7 else "#774400"
-        self._t(px + 14, py + 30,
+        bright_accent = accent
+        dim_accent = border
+        msg_col = bright_accent if alpha > 0.7 else dim_accent
+        self._t(px + 14, py + 32,
                 msg,
                 font=("Courier", 8), fill=msg_col, anchor="nw",
-                width=pw - 18)
+                width=pw - 20)
 
     # ------------------------------------------------------------------
     # Leaderboard screen
@@ -742,6 +816,25 @@ class UIManager:
             self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray50")
         else:
             self._r(0, 0, CANVAS_W, CANVAS_H, fill="#000000", outline="", stipple="gray25")
+
+    def draw_static_overlay(self, intensity: float) -> None:
+        count = int(intensity * 110)
+        for _ in range(count):
+            sx = _rng.randint(0, CANVAS_W - 3)
+            sy = _rng.randint(HUD_H, CANVAS_H - 3)
+            sw = _rng.randint(1, 14)
+            sh = _rng.randint(1, 3)
+            v  = _rng.randint(50, 255)
+            col = f"#{v:02x}{v:02x}{v:02x}"
+            self._r(sx, sy, sx + sw, sy + sh, fill=col, outline="")
+        for _ in range(int(intensity * 5)):
+            ly = _rng.randint(HUD_H, CANVAS_H)
+            lw = _rng.randint(60, 380)
+            lx = _rng.randint(0, max(0, CANVAS_W - lw))
+            self._r(lx, ly, lx + lw, ly + 2, fill="#ffffff", outline="")
+        if intensity > 0.6:
+            self._r(0, HUD_H, CANVAS_W, CANVAS_H,
+                    fill="#111111", outline="", stipple="gray25")
 
     def draw_invert_flash(self, intensity: float) -> None:
         if intensity <= 0:
