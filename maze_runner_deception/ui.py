@@ -140,7 +140,7 @@ class UIManager:
         self._t(CANVAS_W // 2, 472,
                 "WASD / Arrows — move   |   R — restart   |   ESC — menu",
                 font=("Courier", 10), fill=FG_DIM, anchor="center")
-        self._t(CANVAS_W // 2, 492, "H — help",
+        self._t(CANVAS_W // 2, 492, "H — help   |   L — leaderboard",
                 font=("Courier", 10), fill=FG_DIM, anchor="center")
 
         v_col = FG_DIM if tick % 120 < 95 else FG_MID
@@ -236,7 +236,7 @@ class UIManager:
     def skip_typewriter(self) -> None:
         self._tw.skip()
 
-    def draw_level_intro(self, countdown: float) -> None:
+    def draw_level_intro(self) -> None:
         self.clear()
         self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
         self._r(24, 24, CANVAS_W - 24, CANVAS_H - 24, fill="", outline=FG_DIM, width=1)
@@ -259,15 +259,18 @@ class UIManager:
                     font=("Courier", size, style), fill=col, anchor="center")
             cy += size + 11
 
-        bar_w = CANVAS_W - 120
-        prog  = max(0.0, (3.5 - countdown) / 3.5)
-        self._r(60, CANVAS_H - 78, 60 + bar_w, CANVAS_H - 66, fill="", outline=FG_DIM)
-        if prog > 0:
-            self._r(60, CANVAS_H - 78, 60 + int(bar_w * prog), CANVAS_H - 66,
-                    fill=ACCENT, outline="")
-        self._t(CANVAS_W // 2, CANVAS_H - 50,
-                f"Commencing in {max(0.0, countdown):.1f}s  ·  ENTER to skip",
-                font=("Courier", 10), fill=FG_DIM, anchor="center")
+        if self._tw.is_done:
+            # Blinking "press ENTER" prompt
+            import time as _time
+            blink_on = int(_time.perf_counter() * 2) % 2 == 0
+            prompt_col = YELLOW if blink_on else FG_DIM
+            self._t(CANVAS_W // 2, CANVAS_H - 54,
+                    "[ ENTER  TO  BEGIN ]",
+                    font=("Courier", 13, "bold"), fill=prompt_col, anchor="center")
+        else:
+            self._t(CANVAS_W // 2, CANVAS_H - 54,
+                    "[ ENTER to skip ]",
+                    font=("Courier", 10), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
     # HUD
@@ -450,6 +453,58 @@ class UIManager:
             col  = YELLOW if line.startswith("[") else (FG_DIM if line == "" else FG_MAIN)
             self._t(CANVAS_W // 2, py + 24 + i * 15, line,
                     font=("Courier", 9), fill=col, anchor="center")
+
+    # ------------------------------------------------------------------
+    # Leaderboard screen
+    # ------------------------------------------------------------------
+
+    def draw_leaderboard(self, scores: list) -> None:
+        self.clear()
+        self._r(0, 0, CANVAS_W, CANVAS_H, fill=BG, outline="")
+        self._r(32, 32, CANVAS_W - 32, CANVAS_H - 32, fill="", outline=YELLOW, width=1)
+
+        self._t(CANVAS_W // 2, 62, "FACILITY RECORDS",
+                font=("Courier", 20, "bold"), fill=YELLOW, anchor="center")
+        self._t(CANVAS_W // 2, 88, "Top Subjects by Score",
+                font=("Courier", 11, "italic"), fill=FG_DIM, anchor="center")
+
+        self._l(80, 108, CANVAS_W - 80, 108, fill=FG_DIM, width=1)
+
+        if not scores:
+            self._t(CANVAS_W // 2, CANVAS_H // 2,
+                    "No scores recorded yet.",
+                    font=("Courier", 12, "italic"), fill=FG_MID, anchor="center")
+            self._t(CANVAS_W // 2, CANVAS_H // 2 + 28,
+                    "Complete the game to enter the leaderboard.",
+                    font=("Courier", 10), fill=FG_DIM, anchor="center")
+        else:
+            headers = ("RANK", "NAME", "SCORE", "DEATHS")
+            col_x   = (90, 200, 450, 590)
+            cy = 126
+            for i, hdr in enumerate(headers):
+                self._t(col_x[i], cy, hdr,
+                        font=("Courier", 10, "bold"), fill=FG_MID, anchor="nw")
+            cy += 22
+            self._l(80, cy, CANVAS_W - 80, cy, fill=FG_DIM, width=1)
+            cy += 8
+
+            medals = {0: YELLOW, 1: "#c0c0c0", 2: "#cd7f32"}
+            for idx, entry in enumerate(scores):
+                row_col = medals.get(idx, FG_MAIN)
+                rank_str  = f"#{idx + 1}"
+                name_str  = entry.get("name", "???")[:14]
+                score_str = f"{entry.get('score', 0):,}"
+                death_str = str(entry.get("deaths", 0))
+                for col_i, text in enumerate(
+                        (rank_str, name_str, score_str, death_str)):
+                    self._t(col_x[col_i], cy, text,
+                            font=("Courier", 11), fill=row_col, anchor="nw")
+                cy += 24
+
+        self._l(80, CANVAS_H - 70, CANVAS_W - 80, CANVAS_H - 70, fill=FG_DIM, width=1)
+        self._t(CANVAS_W // 2, CANVAS_H - 50,
+                "[ ESC / L / ENTER — back to menu ]",
+                font=("Courier", 10), fill=FG_DIM, anchor="center")
 
     # ------------------------------------------------------------------
     # Overlays

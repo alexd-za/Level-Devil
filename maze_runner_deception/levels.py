@@ -804,19 +804,24 @@ class Level:
 # Level factory
 # ---------------------------------------------------------------------------
 
-def make_level(number: int) -> tuple["Level", tuple[int, int]]:
+def make_level(number: int,
+               session_flags: Optional[dict] = None) -> tuple["Level", tuple[int, int]]:
+    if session_flags is None:
+        session_flags = {}
     if number == 1:
         raw   = MAZE_1
         start = _find_char(raw, "S") or (1, 1)
+        fake_already_triggered = session_flags.get("l1_fake_seen", False)
         cfg   = LevelConfig(
             number=1,
             grid=_clean_grid(raw),
             player_start=start,
             exit_pos=(19, 19),
-            fake_exit_pos=(9, 9),
+            fake_exit_pos=None if fake_already_triggered else (9, 9),
         )
         lv = Level(cfg)
-        lv.exits.clear()
+        if not fake_already_triggered:
+            lv.exits.clear()
         return lv, start
 
     elif number == 2:

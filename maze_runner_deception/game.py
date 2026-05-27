@@ -16,6 +16,7 @@ from levels import (
     INTRO_TEXT,
 )
 from ui import UIManager, CANVAS_W, CANVAS_H, BG, HUD_H
+from leaderboard import save_score, top_scores
 
 FRAME_MS     = 16
 TOTAL_LEVELS = 5
@@ -185,13 +186,14 @@ class FadeTransition:
 # ---------------------------------------------------------------------------
 
 class GS:
-    MENU       = "menu"
-    HELP       = "help"
-    INTRO      = "intro"
-    PLAYING    = "playing"
-    DEAD       = "dead"
-    LEVEL_DONE = "level_done"
-    ENDING     = "ending"
+    MENU        = "menu"
+    HELP        = "help"
+    INTRO       = "intro"
+    PLAYING     = "playing"
+    DEAD        = "dead"
+    LEVEL_DONE  = "level_done"
+    ENDING      = "ending"
+    LEADERBOARD = "leaderboard"
 
 
 # ---------------------------------------------------------------------------
@@ -215,12 +217,13 @@ class GameController:
         self.total_deaths = 0
         self.current_lvl  = 1
 
+        self._session_flags: dict = {}
+
         self.state:  str             = GS.MENU
         self.level:  Optional[Level] = None
         self.player: Optional[Player] = None
 
         self._level_timer  = 0.0
-        self._intro_timer  = 3.5
         self._death_timer  = 0.0
         self._done_timer   = 0.0
         self._ending_tick  = 0
@@ -242,6 +245,8 @@ class GameController:
 
         self._note_lines: list[str] = []
         self._note_timer: float     = 0.0
+
+        self._leaderboard_scores: list[dict] = []
 
         self._last_t = time.perf_counter()
         self._loop()
@@ -268,15 +273,24 @@ class GameController:
                 self._do_fade(lambda: self._begin_level(1))
             elif k == "h":
                 self.state = GS.HELP
+            elif k == "l":
+                self._leaderboard_scores = top_scores()
+                self.state = GS.LEADERBOARD
 
         elif self.state == GS.HELP:
             if k in ("escape", "h"):
                 self.state = GS.MENU
 
+        elif self.state == GS.LEADERBOARD:
+            if k in ("escape", "l", "return", "enter"):
+                self.state = GS.MENU
+
         elif self.state == GS.INTRO:
             if k in ("return", "enter"):
-                self.ui.skip_typewriter()
-                self._intro_timer = 0.0
+                if not self.ui._tw.is_done:
+                    self.ui.skip_typewriter()
+                else:
+                    self._do_fade(self._start_playing)
 
         elif self.state == GS.PLAYING:
             if k == "r":
@@ -354,16 +368,12 @@ class GameController:
         elif self.state == GS.PLAYING:    self._upd_playing(dt)
         elif self.state == GS.DEAD:       self._upd_dead(dt)
         elif self.state == GS.LEVEL_DONE: self._upd_done(dt)
-        elif self.state == GS.ENDING:     self._ending_tick += 1
+        elif self.state == GS.ENDING:
+            self._ending_tick += 1
+            self.ui.update_typewriter(dt)
 
     def _upd_intro(self, dt: float) -> None:
         self.ui.update_typewriter(dt)
-        self._intro_timer -= dt
-        if self._intro_timer <= 0 and self.ui._tw.is_done:
-            self._start_playing()
-        elif self._intro_timer <= 0:
-            self.ui.skip_typewriter()
-            self._start_playing()
 
     def _upd_playing(self, dt: float) -> None:
         if not self.player or not self.level:
@@ -421,7 +431,6 @@ class GameController:
 
     def _begin_level(self, num: int) -> None:
         self.current_lvl  = num
-        self._intro_timer = 3.5
         self._hint_shown  = False
         self._hint_timer  = 0.0
         self._hint_text   = ""
@@ -430,7 +439,7 @@ class GameController:
         self.state = GS.INTRO
 
     def _start_playing(self) -> None:
-        lv, start = make_level(self.current_lvl)
+        lv, start = make_level(self.current_lvl, self._session_flags)
         self.level  = lv
         self.player = Player(*start)
         mw, mh      = lv.pixel_size()
@@ -457,6 +466,9 @@ class GameController:
             py_screen = cy + oy
             self.particles.burst(px_screen, py_screen, "#ff3333", 18)
             self.total_deaths += 1
+        if (self.level and self.current_lvl == 1
+                and self.level._last_event_cause == "trap"):
+            self._session_flags["l1_fake_seen"] = True
         self._death_timer = 0.0
         self._shake(SHAKE_FRAMES)
         lines = self.level.pick_death_message() if self.level else ["You died."]
@@ -474,16 +486,30 @@ class GameController:
     def _advance(self) -> None:
         nxt = self.current_lvl + 1
         if nxt > TOTAL_LEVELS:
+            self._prompt_leaderboard()
             self.ui.start_intro(LEVEL_ENDING)
             self._ending_tick = 0
             self.state = GS.ENDING
         else:
             self._begin_level(nxt)
 
+    def _prompt_leaderboard(self) -> None:
+        import tkinter.simpledialog as sd
+        name = sd.askstring(
+            "FACILITY RECORDS",
+            f"Subject 47 — Final score: {self.total_score:,}\n"
+            f"Total deaths: {self.total_deaths}\n\n"
+            "Enter your name for the leaderboard:",
+            parent=self.root,
+        )
+        if name and name.strip():
+            save_score(name.strip(), self.total_score, self.total_deaths)
+
     def _go_menu(self) -> None:
-        self.total_score  = 0
-        self.total_deaths = 0
-        self.current_lvl  = 1
+        self.total_score    = 0
+        self.total_deaths   = 0
+        self.current_lvl    = 1
+        self._session_flags = {}
         self.level  = None
         self.player = None
         self.state  = GS.MENU
@@ -517,7 +543,7 @@ class GameController:
             self.ui.draw_help()
 
         elif self.state == GS.INTRO:
-            self.ui.draw_level_intro(max(0.0, self._intro_timer))
+            self.ui.draw_level_intro()
 
         elif self.state in (GS.PLAYING, GS.DEAD):
             self._draw_world(ox, oy)
@@ -552,6 +578,9 @@ class GameController:
         elif self.state == GS.ENDING:
             self.ui.draw_ending(self._ending_tick)
 
+        elif self.state == GS.LEADERBOARD:
+            self.ui.draw_leaderboard(self._leaderboard_scores)
+
         if self.fade.active:
             self.ui.draw_fade(self.fade.alpha)
 
@@ -583,7 +612,7 @@ class GameController:
                     ey = gy * TILE_SIZE + oy
                     self.canvas.create_rectangle(
                         ex, ey, ex + TILE_SIZE, ey + TILE_SIZE,
-                        fill="#0a0a0e", outline="#111118", width=1,
+                        fill="#12121a", outline="#1e1e2a", width=1,
                     )
 
         # Walls (viewport culled via wall_map)
@@ -679,19 +708,19 @@ class GameController:
             return
 
         zone = (gx + gy) / max_coord
-        r = int(0x28 + zone * 0x18)
-        g = int(0x28 + zone * 0x10)
-        b = int(0x2c + zone * 0x1c)
+        r = int(0x48 + zone * 0x18)
+        g = int(0x44 + zone * 0x14)
+        b = int(0x52 + zone * 0x1c)
         base_col = f"#{r:02x}{g:02x}{b:02x}"
 
-        hl_r = min(255, r + 0x1a)
-        hl_g = min(255, g + 0x14)
-        hl_b = min(255, b + 0x1e)
+        hl_r = min(255, r + 0x22)
+        hl_g = min(255, g + 0x1c)
+        hl_b = min(255, b + 0x26)
         hl_col = f"#{hl_r:02x}{hl_g:02x}{hl_b:02x}"
 
-        sh_r = max(0, r - 0x10)
-        sh_g = max(0, g - 0x0c)
-        sh_b = max(0, b - 0x12)
+        sh_r = max(0, r - 0x18)
+        sh_g = max(0, g - 0x14)
+        sh_b = max(0, b - 0x1a)
         sh_col = f"#{sh_r:02x}{sh_g:02x}{sh_b:02x}"
 
         self.canvas.create_rectangle(
@@ -710,15 +739,23 @@ class GameController:
 
     def _draw_exit_tile(self, ex: float, ey: float,
                          color: str, is_fake: bool) -> None:
-        ts = TILE_SIZE
-        for col, m in [("#002a18", 0), ("#00552e", 3), (color, 6)]:
-            self.canvas.create_rectangle(
-                ex + m, ey + m, ex + ts - m, ey + ts - m,
-                fill=col, outline="",
-            )
+        ts  = TILE_SIZE
+        cx  = ex + ts // 2
+        cy  = ey + ts // 2
+        # Outer glow ring
+        self.canvas.create_rectangle(
+            ex, ey, ex + ts, ey + ts,
+            fill="#001a0d", outline=color, width=2,
+        )
+        # Inner bright square
+        self.canvas.create_rectangle(
+            ex + 4, ey + 4, ex + ts - 4, ey + ts - 4,
+            fill="#003820", outline="",
+        )
+        # Arrow symbol — clearly readable
         self.canvas.create_text(
-            ex + ts // 2, ey + ts // 2, text="EXIT",
-            font=("Courier", 5, "bold"), fill="#000000",
+            cx, cy, text="▶",
+            font=("TkDefaultFont", 11, "bold"), fill=color,
         )
 
     def _draw_note_icon(self, nx: float, ny: float, t: float) -> None:
@@ -801,72 +838,67 @@ class GameController:
         cx = p.gx * TILE_SIZE + TILE_SIZE / 2 + ox
         cy = p.gy * TILE_SIZE + TILE_SIZE / 2 + oy + math.sin(p.bob_timer) * 1.4
 
-        hw = (PLAYER_SIZE / 2) * p.squish_x
-        hh = (PLAYER_SIZE / 2) * p.squish_y
+        r = (PLAYER_SIZE / 2) * min(p.squish_x, p.squish_y)
 
         color = p.color
+        ring  = "#ff7777"
         if p.has_effect("invert_controls"):
             v     = int(150 + 105 * abs(math.sin(t * 9.0)))
             color = f"#{v:02x}00{v:02x}"
+            ring  = f"#{min(255,v+60):02x}44{min(255,v+60):02x}"
         if p.has_effect("darkness"):
-            color = "#ddcc00"
+            color = "#bbaa00"
+            ring  = "#ffee44"
 
         # Drop shadow
         self.canvas.create_oval(
-            cx - hw + 1, cy + hh * 0.6,
-            cx + hw + 2, cy + hh + 3,
-            fill="#0a0005", outline="",
+            cx - r + 2, cy + r * 0.5,
+            cx + r + 3, cy + r + 4,
+            fill="#06000a", outline="",
         )
 
-        # Body (lower portion)
-        body_top = cy - hh * 0.15
-        self.canvas.create_rectangle(
-            cx - hw, body_top, cx + hw, cy + hh,
-            fill=color, outline="#ff6666", width=1,
-        )
-        # Body highlight
-        self.canvas.create_rectangle(
-            cx - hw + 1, body_top + 1, cx - hw + 4, cy,
-            fill="#ff8888", outline="",
-        )
-
-        # Head (oval on top)
-        hr_w = hw * 0.88
-        hr_h = hh * 0.72
-        hcy  = cy - hh * 0.55
+        # Outer glow ring
         self.canvas.create_oval(
-            cx - hr_w, hcy - hr_h, cx + hr_w, hcy + hr_h,
-            fill=color, outline="#ff6666", width=1,
-        )
-        # Head specular
-        self.canvas.create_oval(
-            cx - hr_w + 1, hcy - hr_h + 1,
-            cx - hr_w * 0.3, hcy,
-            fill="#ff8888", outline="",
+            cx - r - 2, cy - r - 2,
+            cx + r + 2, cy + r + 2,
+            fill="", outline=ring, width=2,
         )
 
-        # Eyes
-        eye_data = {
-            "right": [(cx + hr_w * 0.35, hcy - 1), (cx + hr_w * 0.35, hcy + 2.5)],
-            "left":  [(cx - hr_w * 0.35, hcy - 1), (cx - hr_w * 0.35, hcy + 2.5)],
-            "down":  [(cx - 2.5, hcy + hr_h * 0.4), (cx + 2.5, hcy + hr_h * 0.4)],
-            "up":    [(cx - 2.5, hcy - hr_h * 0.4), (cx + 2.5, hcy - hr_h * 0.4)],
+        # Main body circle
+        self.canvas.create_oval(
+            cx - r, cy - r, cx + r, cy + r,
+            fill=color, outline="",
+        )
+
+        # Inner highlight arc (top-left)
+        self.canvas.create_oval(
+            cx - r + 2, cy - r + 2,
+            cx,         cy,
+            fill="#ff9999", outline="",
+        )
+
+        # Directional eyes
+        eye_offset = {
+            "right": [(r * 0.35,  -r * 0.25), (r * 0.35,  r * 0.25)],
+            "left":  [(-r * 0.35, -r * 0.25), (-r * 0.35, r * 0.25)],
+            "down":  [(-r * 0.25, r * 0.35),  (r * 0.25,  r * 0.35)],
+            "up":    [(-r * 0.25, -r * 0.35), (r * 0.25,  -r * 0.35)],
         }
         pupil_dir = {
             "right": (1.0, 0.0), "left": (-1.0, 0.0),
             "down":  (0.0, 1.0), "up":   (0.0, -1.0),
         }
         pdx, pdy = pupil_dir.get(p.facing, (1.0, 0.0))
-        for epos in eye_data.get(p.facing, []):
-            ex_, ey_ = epos
+        for edx, edy in eye_offset.get(p.facing, []):
+            ex_, ey_ = cx + edx, cy + edy
             self.canvas.create_oval(
-                ex_ - 2, ey_ - 2, ex_ + 2, ey_ + 2,
+                ex_ - 2.2, ey_ - 2.2, ex_ + 2.2, ey_ + 2.2,
                 fill="#ffffff", outline="",
             )
             self.canvas.create_oval(
-                ex_ + pdx * 0.7 - 1, ey_ + pdy * 0.7 - 1,
-                ex_ + pdx * 0.7 + 1, ey_ + pdy * 0.7 + 1,
-                fill="#330000", outline="",
+                ex_ + pdx * 0.9 - 1.2, ey_ + pdy * 0.9 - 1.2,
+                ex_ + pdx * 0.9 + 1.2, ey_ + pdy * 0.9 + 1.2,
+                fill="#1a0000", outline="",
             )
 
     def _draw_player_dead(self, ox: int, oy: int) -> None:
