@@ -17,21 +17,49 @@ LAB_MESSAGES: dict[str, list[str]] = {
         "MOTOR RECAL ACTIVE  |  Subject response: nominal.",
         "DIRECTIVE 7.3: Sensory inversion engaged. Adaptation in progress.",
         "ORACLE NOTE: Subject 47 motor pathways temporarily rerouted. Expected.",
+        "NOTICE: Left is right. Right is left. The facility finds this instructive.",
     ],
     "speed_boost": [
         "METABOLIC SURGE DETECTED  |  Facility assumes no liability.",
         "ADVISORY: Elevated locomotion observed. Subject is performing within tolerances.",
         "ORACLE FLAG: Adrenaline spike logged. Group D subjects always run faster at the end.",
+        "STIMULUS APPLIED  |  We are curious how far you'll go.",
     ],
     "darkness": [
         "OPTICAL CALIBRATION IN PROGRESS  |  Please remain calm.",
         "FACILITY NOTICE: Sector lighting undergoing scheduled maintenance. Duration: unknown.",
         "ORACLE LOG: Darkness response index nominal. Subject 47 fear response: suppressed.",
+        "LIGHTS OUT  |  We can still see you. We have always been able to see you.",
     ],
     "shield": [
         "BARRIER PROTOCOL ACTIVE  |  Temporary. Everything is temporary.",
         "ADVISORY: Protective field engaged. The facility did not authorize this.",
         "ORACLE NOTE: Anomalous shielding detected. Subject 47 is adapting. Concerning.",
+        "NOTICE: You are protected. For now. We have notes on this.",
+    ],
+    "slow_motion": [
+        "MOTOR INHIBITOR ACTIVE  |  We want to observe you more carefully.",
+        "NOTICE: Locomotion cap engaged. This is for data collection. Relax.",
+        "ORACLE FLAG: Velocity suppressor deployed. Subject 47 adaptation: pending.",
+        "DIRECTIVE 4.1: Slowing Subject 47. We need a better look. Please cooperate.",
+    ],
+    "paranoia": [
+        "SENSORY CALIBRATION  |  Please disregard any anomalous readings.",
+        "NOTICE: Cognitive drift detected. Perceptual adjustments applied. All is fine.",
+        "ORACLE NOTE: Subject 47 perceptual matrix flagged for realignment. Standard.",
+        "ADVISORY: If information appears incorrect — it is not. Trust the data.",
+    ],
+    "gravity": [
+        "INERTIA CALIBRATION ACTIVE  |  Vertical axis reassignment in progress.",
+        "DIRECTIVE 9.2: Y-axis sensorimotor link temporarily suspended. Adaptation expected.",
+        "ORACLE FLAG: Subject 47 up/down distinction suspended. We are watching closely.",
+        "NOTICE: What was up may be down. The floor is still the floor. Probably.",
+    ],
+    "static": [
+        "EM DISCHARGE EVENT  |  Brief. Nothing to worry about. Nothing at all.",
+        "FACILITY NOTICE: Electromagnetic anomaly detected. Diagnostic running. Please hold.",
+        "ORACLE LOG: Static discharge. Sector-wide. Duration negligible. You are fine.",
+        "NOTICE: The noise was real. The cause is classified. You would not believe it.",
     ],
 }
 
@@ -620,6 +648,60 @@ NOTE_CONTENTS = {
         "— Subjects 12, 19, 31, 38, 44",
         "[CONNECTION TERMINATED]",
     ],
+    "paranoia_report": [
+        "[ DOCUMENT: Subject 38 — Personal Log, Day 11 ]",
+        "",
+        "The timer said 04:20.",
+        "I had been running for over an hour.",
+        "I watched it change to 02:15.",
+        "Then 08:43. Then back to 04:20.",
+        "",
+        "I asked Dr. Voss about it.",
+        "She said I was confused.",
+        "She was smiling.",
+        "I do not like the smile.",
+    ],
+    "discharge_memo": [
+        "[ DOCUMENT: Facility Tech — EM Events Log ]",
+        "",
+        "Static discharge events confirmed: Sectors 2, 4, 5.",
+        "Cause: experimental delta-wave suppressor.",
+        "Subject impact: 1.4-1.8s disorientation.",
+        "Perceived reality shift: significant.",
+        "",
+        "Risk assessment: acceptable.",
+        "Continuation: approved.",
+        "— Tech Division (cc: Dr. Voss)",
+    ],
+    "group_c_note": [
+        "[ DOCUMENT: Handwritten. Found in wall cavity. ]",
+        "",
+        "Group C was six subjects.",
+        "We were told we were free.",
+        "We walked to the final exit.",
+        "",
+        "The exit opened onto Sector 1.",
+        "We tried again. And again.",
+        "",
+        "We are still trying.",
+        "There is no outside.",
+        "— Group C (what remains of us)",
+    ],
+    "sub47_scratch": [
+        "[ DOCUMENT: Scratched into floor. Sector 5. ]",
+        "",
+        "I think I am Subject 47.",
+        "I think I have always been Subject 47.",
+        "",
+        "But I remember a name.",
+        "I remember a window.",
+        "I remember sunlight.",
+        "",
+        "The facility says these are",
+        "implanted memories.",
+        "",
+        "(What if they're right.)",
+    ],
 }
 
 
@@ -953,6 +1035,17 @@ class Level:
                 elif trig.effect == "shield":
                     player.apply_effect("shield", trig.duration)
                     return "shield"
+                elif trig.effect == "slow_motion":
+                    player.apply_effect("slow_motion", trig.duration)
+                    return "slow_motion"
+                elif trig.effect == "paranoia":
+                    player.apply_effect("paranoia", trig.duration)
+                    return "paranoia_applied"
+                elif trig.effect == "gravity":
+                    player.apply_effect("gravity", trig.duration)
+                    return "gravity_applied"
+                elif trig.effect == "static":
+                    return "static_burst"
 
         for note in self.notes:
             if (not note.collected
@@ -1028,7 +1121,11 @@ def make_level(number: int,
             player_start=start,
             exit_pos=(19, 19),
             fake_exit_pos=None if fake_already_triggered else (9, 9),
-            trigger_tiles=[(3, 5, "speed_boost", 4.0)],
+            trigger_tiles=[
+                (3,  5, "speed_boost",  4.0),
+                (11, 7, "gravity",      4.0),
+                (5, 13, "slow_motion",  5.0),
+            ],
             notes=[(17, 13, "dr_voss_memo")],
         )
         lv = Level(cfg)
@@ -1050,6 +1147,9 @@ def make_level(number: int,
                 (15, 15, "invert_controls", 6.0),
                 (19, 7,  "shield",          4.0),
                 (5,  17, "speed_boost",     5.0),
+                (9,  9,  "slow_motion",     5.0),
+                (21, 5,  "paranoia",        5.0),
+                (13, 21, "gravity",         4.0),
             ],
             fake_wall_positions=[],
             enemy_patrols=[
@@ -1059,6 +1159,7 @@ def make_level(number: int,
             notes=[
                 (11, 3,  "s43_journal"),
                 (17, 9,  "s43_journal_2"),
+                (13, 17, "paranoia_report"),
             ],
         )
         return Level(cfg), start
@@ -1084,6 +1185,9 @@ def make_level(number: int,
                 (7,  19, "invert_controls", 4.0),
                 (11, 15, "speed_boost",     4.0),
                 (3,  21, "shield",          4.0),
+                (19, 7,  "static",          0.0),
+                (9,  21, "gravity",         4.5),
+                (25, 17, "slow_motion",     5.0),
             ],
             fake_wall_positions=[(5, 10)],
             enemy_patrols=[
@@ -1094,6 +1198,7 @@ def make_level(number: int,
                 (5,  11, "maintenance_leak"),
                 (13, 23, "s39_report"),
                 (21, 15, "s47_own_note"),
+                (7,  13, "discharge_memo"),
             ],
         ))
         lv.moving_exit.move_interval = 2.0
@@ -1117,6 +1222,10 @@ def make_level(number: int,
                 (25, 17, "darkness",         7.0),
                 (9,  17, "speed_boost",      5.0),
                 (27, 7,  "shield",           4.0),
+                (7,  11, "paranoia",         5.5),
+                (27, 15, "slow_motion",      5.0),
+                (19, 7,  "static",           0.0),
+                (13, 29, "gravity",          4.0),
             ],
             invisible_walls=invisible,
             halfway_gx=17,
@@ -1131,6 +1240,7 @@ def make_level(number: int,
                 (17, 21, "oracle_log"),
                 (31, 23, "s44_notebook"),
                 (7,  15, "facility_blueprint"),
+                (25,  9, "group_c_note"),
             ],
         )
         return Level(cfg), start
@@ -1161,6 +1271,10 @@ def make_level(number: int,
                 (13, 3,  "speed_boost",     5.0),
                 (21, 7,  "shield",          4.0),
                 (31, 29, "speed_boost",     5.0),
+                (31, 5,  "static",          0.0),
+                (15, 21, "slow_motion",     6.0),
+                (25, 33, "paranoia",        5.0),
+                (7,  37, "gravity",         4.0),
             ],
             invisible_walls=invisible,
             halfway_gx=20,
@@ -1176,6 +1290,7 @@ def make_level(number: int,
                 (11, 7,  "s31_warning"),
                 (29, 11, "oracle_final"),
                 (37, 11, "oracle_warning"),
+                (25, 19, "sub47_scratch"),
             ],
         ))
         for enemy in lv.enemies:

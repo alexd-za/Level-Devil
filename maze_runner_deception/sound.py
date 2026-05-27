@@ -6,6 +6,7 @@ import io
 import threading
 import subprocess
 import shutil
+import random as _rand
 
 _RATE = 22050
 _cache: dict[str, bytes] = {}
@@ -91,6 +92,43 @@ def _build_shield() -> bytes:
     return _gen_wav(s)
 
 
+def _build_static() -> bytes:
+    n = int(_RATE * 0.45)
+    fade_s = int(_RATE * 0.08)
+    s = []
+    for i in range(n):
+        v = _rand.uniform(-0.65, 0.65)
+        if i < fade_s:
+            v *= i / fade_s
+        if i > n - fade_s:
+            v *= (n - i) / fade_s
+        s.append(v)
+    s += _sine(220, 0.12, amp=0.3)
+    return _gen_wav(s)
+
+
+def _build_slow() -> bytes:
+    freqs = [440, 369, 311, 261]
+    s = []
+    for i, freq in enumerate(freqs):
+        amp = 0.5 - i * 0.05
+        s += _sine(freq, 0.11, amp=amp)
+    s += _sine(220, 0.18, amp=0.35, fade=0.08)
+    return _gen_wav(s)
+
+
+def _build_glitch() -> bytes:
+    s = []
+    for freq, dur, amp in [(1400, 0.025, 0.55), (700, 0.02, 0.45),
+                           (1800, 0.018, 0.6), (350, 0.03, 0.35)]:
+        s += _sine(freq, dur, amp)
+    n = int(_RATE * 0.07)
+    for i in range(n):
+        v = 0.25 * _rand.uniform(-1, 1) * (1 - i / n)
+        s.append(v)
+    return _gen_wav(s)
+
+
 def init() -> None:
     global _aplay_available
     _aplay_available = shutil.which("aplay") is not None
@@ -100,6 +138,9 @@ def init() -> None:
     _cache["trigger"]    = _build_trigger()
     _cache["powerup"]    = _build_powerup()
     _cache["shield"]     = _build_shield()
+    _cache["static"]     = _build_static()
+    _cache["slow"]       = _build_slow()
+    _cache["glitch"]     = _build_glitch()
 
 
 def play(name: str) -> None:

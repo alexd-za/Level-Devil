@@ -185,6 +185,8 @@ class Player:
     def get_input_multiplier(self) -> tuple[int, int]:
         if self.has_effect("invert_controls"):
             return -1, -1
+        if self.has_effect("gravity"):
+            return 1, -1
         return 1, 1
 
     def die(self) -> None:
@@ -215,7 +217,12 @@ class Player:
         elif dy > 0: self.facing = "down"
         elif dy < 0: self.facing = "up"
 
-        spd  = self.SPEED * (1.85 if self.has_effect("speed_boost") else 1.0)
+        if self.has_effect("speed_boost"):
+            spd = self.SPEED * 1.85
+        elif self.has_effect("slow_motion"):
+            spd = self.SPEED * 0.38
+        else:
+            spd = self.SPEED
         step = spd * dt
 
         new_gx = self.gx + dx * step
@@ -223,20 +230,20 @@ class Player:
             self.gx = new_gx
         elif dy == 0 and dx != 0:
             frac = self.gy - math.floor(self.gy)
-            if frac < 0.28:
-                self.gy = max(0.0, self.gy - min(frac, step * 1.5))
-            elif frac > 0.72:
-                self.gy = self.gy + min(1.0 - frac, step * 1.5)
+            if frac < 0.32:
+                self.gy = max(0.0, self.gy - min(frac, step * 1.6))
+            elif frac > 0.68:
+                self.gy = self.gy + min(1.0 - frac, step * 1.6)
 
         new_gy = self.gy + dy * step
         if not self._collides(self.gx, new_gy, wall_map):
             self.gy = new_gy
         elif dx == 0 and dy != 0:
             frac = self.gx - math.floor(self.gx)
-            if frac < 0.28:
-                self.gx = max(0.0, self.gx - min(frac, step * 1.5))
-            elif frac > 0.72:
-                self.gx = self.gx + min(1.0 - frac, step * 1.5)
+            if frac < 0.32:
+                self.gx = max(0.0, self.gx - min(frac, step * 1.6))
+            elif frac > 0.68:
+                self.gx = self.gx + min(1.0 - frac, step * 1.6)
 
         self.gx = max(0.0, self.gx)
         self.gy = max(0.0, self.gy)

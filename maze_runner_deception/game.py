@@ -243,6 +243,10 @@ class GameController:
         self._powerup_flash = 0.0
         self._glitch_frames = 0
 
+        self._static_timer: float = 0.0
+        self._paranoia_seed: int  = 0
+        self._paranoia_flip_t: float = 0.0
+
         self._shake_rem = 0
         self._shake_off = (0, 0)
 
@@ -392,6 +396,10 @@ class GameController:
             self._powerup_flash = max(0.0, self._powerup_flash - dt)
         if self._lab_msg_timer > 0:
             self._lab_msg_timer = max(0.0, self._lab_msg_timer - dt)
+        if self._static_timer > 0:
+            self._static_timer  = max(0.0, self._static_timer - dt)
+            if self._static_timer > 0:
+                self._shake(4)
 
         if self._shake_rem > 0:
             self._shake_rem -= 1
@@ -416,6 +424,12 @@ class GameController:
             return
         self._level_timer += dt
         self.player.tick_effects(dt)
+
+        if self.player.has_effect("paranoia"):
+            self._paranoia_flip_t += dt
+            if self._paranoia_flip_t > 0.35:
+                self._paranoia_flip_t = 0.0
+                self._paranoia_seed = random.randint(0, 9999)
 
         hint_cfg = LEVEL_HINTS.get(self.current_lvl)
         if hint_cfg and not self._hint_shown:
@@ -461,6 +475,26 @@ class GameController:
             self._powerup_flash = 0.5
             sound.play("shield")
             self._set_lab_msg("shield")
+        elif event == "slow_motion":
+            self._shake(5)
+            self._powerup_flash = 0.3
+            sound.play("slow")
+            self._set_lab_msg("slow_motion")
+        elif event == "paranoia_applied":
+            self._shake(6)
+            self._invert_flash = 0.3
+            sound.play("glitch")
+            self._set_lab_msg("paranoia")
+        elif event == "gravity_applied":
+            self._shake(5)
+            self._invert_flash = 0.25
+            sound.play("glitch")
+            self._set_lab_msg("gravity")
+        elif event == "static_burst":
+            self._shake(14)
+            self._static_timer = 1.5
+            sound.play("static")
+            self._set_lab_msg("static")
         elif event == "note_collected":
             if self.level._last_note:
                 self._note_lines = list(self.level._last_note)
@@ -649,22 +683,34 @@ class GameController:
             self.particles.render(self.canvas)
 
             if self.state in (GS.PLAYING, GS.PAUSED, GS.READING):
-                invert_rem = (self.player.effects.get("invert_controls", 0.0)
-                              if self.player else 0.0)
-                dark_rem   = (self.player.effects.get("darkness", 0.0)
-                              if self.player else 0.0)
-                speed_rem  = (self.player.effects.get("speed_boost", 0.0)
-                              if self.player else 0.0)
-                shield_rem = (self.player.effects.get("shield", 0.0)
-                              if self.player else 0.0)
+                eff = self.player.effects if self.player else {}
+                invert_rem  = eff.get("invert_controls", 0.0)
+                dark_rem    = eff.get("darkness",        0.0)
+                speed_rem   = eff.get("speed_boost",     0.0)
+                shield_rem  = eff.get("shield",          0.0)
+                slow_rem    = eff.get("slow_motion",     0.0)
+                paranoia_rem = eff.get("paranoia",       0.0)
+                gravity_rem = eff.get("gravity",         0.0)
+
+                disp_timer  = self._level_timer
+                disp_score  = self.total_score
+                disp_deaths = self.player.deaths if self.player else 0
+                if paranoia_rem > 0:
+                    _pr = random.Random(self._paranoia_seed)
+                    disp_timer  = max(0.0, self._level_timer + _pr.uniform(-25, 50))
+                    disp_score  = max(0, self.total_score + _pr.randint(-6000, 2000))
+                    disp_deaths = max(0, disp_deaths + _pr.randint(-1, 4))
+
                 self.ui.draw_hud(
-                    self.current_lvl, self._level_timer, self.total_score,
-                    self.player.deaths if self.player else 0,
+                    self.current_lvl, disp_timer, disp_score,
+                    disp_deaths,
                     self._hint_text if self._hint_shown else "",
                     invert_rem, dark_rem, speed_rem, shield_rem,
                     self.player.notes_found if self.player else 0,
                     self._lab_msg if self._lab_msg_timer > 0 else "",
                     self._lab_msg_timer,
+                    self._lab_msg_kind,
+                    slow_rem, paranoia_rem, gravity_rem,
                 )
                 if self._invert_flash > 0:
                     self.ui.draw_invert_flash(self._invert_flash * 3)
@@ -796,6 +842,10 @@ class GameController:
         if self.player and self.player.has_effect("darkness"):
             self._draw_darkness(ox, oy, cs, rs, ce, re, t)
 
+        # Static burst overlay
+        if self._static_timer > 0:
+            self.ui.draw_static_overlay(min(1.0, self._static_timer / 0.6))
+
     # ------------------------------------------------------------------
     # Tile rendering helpers
     # ------------------------------------------------------------------
@@ -867,16 +917,41 @@ class GameController:
 
     def _draw_note_icon(self, nx: float, ny: float, t: float) -> None:
         ts    = TILE_SIZE
-        pulse = 0.5 + 0.5 * math.sin(t * 4.0)
-        v     = int(0xaa + pulse * 0x55)
-        col   = f"#{v:02x}{int(v*0.8):02x}00"
+        pulse = 0.5 + 0.5 * math.sin(t * 3.5)
+        v     = int(0x99 + pulse * 0x66)
+        col   = f"#{v:02x}{int(v * 0.75):02x}00"
+        glow  = f"#{min(255, v + 30):02x}{int((v + 20) * 0.5):02x}00"
+        cx = nx + ts // 2
+        cy = ny + ts // 2
+
+        # Outer glow
+        self.canvas.create_rectangle(
+            nx + 3, ny + 2, nx + ts - 3, ny + ts - 2,
+            fill="", outline=col, width=1,
+        )
+        # Paper body
         self.canvas.create_rectangle(
             nx + 5, ny + 4, nx + ts - 5, ny + ts - 4,
-            fill="#1a1000", outline=col, width=1,
+            fill="#100d00", outline=glow, width=1,
         )
-        self.canvas.create_text(
-            nx + ts // 2, ny + ts // 2, text="!",
-            font=("Courier", 8, "bold"), fill=col,
+        # Corner fold indicator
+        self.canvas.create_polygon(
+            nx + ts - 5, ny + 4,
+            nx + ts - 5, ny + 9,
+            nx + ts - 10, ny + 4,
+            fill="#1e1600", outline=col, width=1,
+        )
+        # Lines on paper
+        for i in range(3):
+            ly = ny + 9 + i * 4
+            lx0 = nx + 6 + (3 if i == 0 else 0)
+            self.canvas.create_line(
+                lx0, ly, nx + ts - 6, ly, fill=col, width=1,
+            )
+        # Exclamation / glow dot
+        self.canvas.create_oval(
+            cx - 2, cy + 3, cx + 2, cy + 7,
+            fill=glow, outline="",
         )
 
 
@@ -889,48 +964,70 @@ class GameController:
         cy = enemy.gy_f * TILE_SIZE + TILE_SIZE / 2 + oy
 
         at = enemy._anim_timer
-        pulse_r = 11 + math.sin(at * 4.0) * 2.5
-
         in_wall = self.level._wall_map.get((int(enemy.gx_f), int(enemy.gy_f))) is not None
 
+        pulse = 0.5 + 0.5 * math.sin(at * 5.0)
+        glow_r = int(80 + pulse * 120)
+        glow_col = f"#{glow_r:02x}0000"
+
+        # Outer threat ring
+        pr = 12 + math.sin(at * 3.0) * 1.5
         self.canvas.create_oval(
-            cx - pulse_r - 2, cy - pulse_r - 2,
-            cx + pulse_r + 2, cy + pulse_r + 2,
-            fill="", outline="#3a0000", width=2,
+            cx - pr - 1, cy - pr - 1, cx + pr + 1, cy + pr + 1,
+            fill="", outline=glow_col, width=1,
         )
 
-        hw, hh = 9, 9
-        body_pts = [
-            cx,      cy - hh - 2,
-            cx + hw, cy - hh + 2,
-            cx + hw + 2, cy,
-            cx + hw, cy + hh - 2,
-            cx,      cy + hh + 2,
-            cx - hw, cy + hh - 2,
-            cx - hw - 2, cy,
-            cx - hw, cy - hh + 2,
-        ]
-        self.canvas.create_polygon(body_pts, fill="#5a0000", outline="#cc1100", width=1)
+        # Hexagonal drone body (6 pts)
+        hw = 8.5
+        ang_off = at * 0.8
+        hex_pts = []
+        for i in range(6):
+            ang = ang_off + i * math.pi / 3
+            hex_pts += [cx + hw * math.cos(ang), cy + hw * math.sin(ang)]
+        self.canvas.create_polygon(hex_pts, fill="#3a0000", outline="#bb1100", width=1)
 
+        # Inner core
         self.canvas.create_rectangle(
-            cx - 6, cy - 6, cx + 6, cy + 6,
-            fill="#880000", outline="",
+            cx - 5, cy - 5, cx + 5, cy + 5,
+            fill="#660000", outline="#ff2200", width=1,
+        )
+        self.canvas.create_rectangle(
+            cx - 2, cy - 2, cx + 2, cy + 2,
+            fill="#ff0000", outline="",
         )
 
-        eye_x = cx + math.sin(at * 3.5) * 5.0
-        eye_y = cy - 1
-        self.canvas.create_oval(
-            eye_x - 3, eye_y - 2.5, eye_x + 3, eye_y + 2.5,
-            fill="#ff0000", outline="#ff6600", width=1,
+        # Rotating scanner arm
+        scan_ang = at * 4.2
+        scan_len = 10
+        sx = cx + math.cos(scan_ang) * scan_len
+        sy = cy + math.sin(scan_ang) * scan_len
+        beam_v = int(120 + pulse * 135)
+        self.canvas.create_line(
+            cx, cy, sx, sy,
+            fill=f"#{beam_v:02x}0000", width=1,
         )
         self.canvas.create_oval(
-            eye_x - 1.2, eye_y - 1.0, eye_x + 1.2, eye_y + 1.0,
-            fill="#ffffff", outline="",
+            sx - 2, sy - 2, sx + 2, sy + 2,
+            fill="#ff3300", outline="",
         )
+
+        # Three LED status dots (triangle pattern)
+        for i, (lax, lay) in enumerate([
+            (cx - 3.5, cy - 6.5),
+            (cx + 3.5, cy - 6.5),
+            (cx,       cy - 8.5),
+        ]):
+            phase = (at * 3.0 + i * 1.05) % (math.pi * 2)
+            led_v = int(180 + 75 * math.sin(phase))
+            led_col = f"#{led_v:02x}0000"
+            self.canvas.create_oval(
+                lax - 1.2, lay - 1.2, lax + 1.2, lay + 1.2,
+                fill=led_col, outline="",
+            )
 
         if in_wall:
-            self.canvas.create_rectangle(
-                cx - hw - 2, cy - hh - 2, cx + hw + 2, cy + hh + 2,
+            self.canvas.create_oval(
+                cx - hw - 3, cy - hw - 3, cx + hw + 3, cy + hw + 3,
                 fill="#000000", outline="", stipple="gray50",
             )
 
@@ -940,70 +1037,125 @@ class GameController:
 
     def _draw_player(self, ox: int, oy: int, t: float) -> None:
         p  = self.player
+        bob = math.sin(p.bob_timer) * 1.4
         cx = p.gx * TILE_SIZE + TILE_SIZE / 2 + ox
-        cy = p.gy * TILE_SIZE + TILE_SIZE / 2 + oy + math.sin(p.bob_timer) * 1.4
+        cy = p.gy * TILE_SIZE + TILE_SIZE / 2 + oy + bob
 
-        r = (PLAYER_SIZE / 2) * min(p.squish_x, p.squish_y)
+        rx = (PLAYER_SIZE / 2) * p.squish_x
+        ry = (PLAYER_SIZE / 2) * p.squish_y
 
-        color = p.color
-        ring  = "#ff7777"
+        suit_col = p.color
+        ring_col = "#ff5555"
+        visor_col = "#88bbdd"
+        chest_col = "#ff3333"
+
         if p.has_effect("invert_controls"):
-            v     = int(150 + 105 * abs(math.sin(t * 9.0)))
-            color = f"#{v:02x}00{v:02x}"
-            ring  = f"#{min(255,v+60):02x}44{min(255,v+60):02x}"
-        if p.has_effect("darkness"):
-            color = "#bbaa00"
-            ring  = "#ffee44"
+            v = int(150 + 105 * abs(math.sin(t * 9.0)))
+            suit_col  = f"#{v:02x}00{v:02x}"
+            ring_col  = f"#{min(255,v+60):02x}44{min(255,v+60):02x}"
+            visor_col = f"#ff00{min(255, v):02x}"
+            chest_col = f"#{min(255, v):02x}00{min(255, v):02x}"
+        elif p.has_effect("darkness"):
+            suit_col  = "#a09000"
+            ring_col  = "#ffee44"
+            visor_col = "#ffee44"
+            chest_col = "#ffcc00"
+        elif p.has_effect("slow_motion"):
+            suit_col  = "#223366"
+            ring_col  = "#4488ff"
+            visor_col = "#6699ff"
+            chest_col = "#3366cc"
+        elif p.has_effect("paranoia"):
+            v = int(180 + 75 * abs(math.sin(t * 14.7)))
+            suit_col  = f"#{v:02x}{max(0, v - 90):02x}00"
+            ring_col  = "#ff8800"
+            visor_col = "#ffaa33"
+            chest_col = "#ff6600"
+        elif p.has_effect("gravity"):
+            suit_col  = "#1a4415"
+            ring_col  = "#44dd22"
+            visor_col = "#88ff55"
+            chest_col = "#33aa11"
 
         # Drop shadow
         self.canvas.create_oval(
-            cx - r + 2, cy + r * 0.5,
-            cx + r + 3, cy + r + 4,
-            fill="#06000a", outline="",
+            cx - rx + 2, cy + ry * 0.5,
+            cx + rx + 3, cy + ry + 4,
+            fill="#060008", outline="",
         )
 
-        # Outer glow ring
+        # Outer glow / collar ring
         self.canvas.create_oval(
-            cx - r - 2, cy - r - 2,
-            cx + r + 2, cy + r + 2,
-            fill="", outline=ring, width=2,
+            cx - rx - 3, cy - ry - 3,
+            cx + rx + 3, cy + ry + 3,
+            fill="", outline=ring_col, width=2,
         )
 
-        # Main body circle
+        # Body suit
         self.canvas.create_oval(
-            cx - r, cy - r, cx + r, cy + r,
-            fill=color, outline="",
+            cx - rx, cy - ry, cx + rx, cy + ry,
+            fill=suit_col, outline="",
         )
 
-        # Inner highlight arc (top-left)
+        # Suit shading (right side darker)
+        shade_r = max(0, int(int(suit_col[1:3], 16) * 0.5))
+        shade_g = max(0, int(int(suit_col[3:5], 16) * 0.5))
+        shade_b = max(0, int(int(suit_col[5:7], 16) * 0.5))
+        shade_col = f"#{shade_r:02x}{shade_g:02x}{shade_b:02x}"
         self.canvas.create_oval(
-            cx - r + 2, cy - r + 2,
-            cx,         cy,
-            fill="#ff9999", outline="",
+            cx, cy - ry * 0.85, cx + rx * 0.85, cy + ry * 0.85,
+            fill=shade_col, outline="", stipple="gray50",
         )
 
-        # Directional eyes
-        eye_offset = {
-            "right": [(r * 0.35,  -r * 0.25), (r * 0.35,  r * 0.25)],
-            "left":  [(-r * 0.35, -r * 0.25), (-r * 0.35, r * 0.25)],
-            "down":  [(-r * 0.25, r * 0.35),  (r * 0.25,  r * 0.35)],
-            "up":    [(-r * 0.25, -r * 0.35), (r * 0.25,  -r * 0.35)],
+        # Visor plate (upper portion)
+        vr = rx * 0.72
+        vy_top = cy - ry + 2
+        vy_bot = cy - ry * 0.05
+        self.canvas.create_oval(
+            cx - vr, vy_top, cx + vr, vy_bot + vr * 0.7,
+            fill="#080a0f", outline=visor_col, width=1,
+        )
+
+        # Visor reflection glint
+        self.canvas.create_oval(
+            cx - vr * 0.48, vy_top + 2,
+            cx - vr * 0.05, vy_top + 2 + vr * 0.32,
+            fill=visor_col, outline="",
+        )
+
+        # Chest emblem / ID badge
+        bx = cx - rx * 0.22
+        by_c = cy + ry * 0.22
+        self.canvas.create_rectangle(
+            bx, by_c - rx * 0.15,
+            bx + rx * 0.44, by_c + rx * 0.15,
+            fill=chest_col, outline="",
+        )
+
+        # Directional eyes inside visor
+        eye_off = {
+            "right": [(vr * 0.35, vr * 0.1), (vr * 0.35, vr * 0.5)],
+            "left":  [(-vr * 0.35, vr * 0.1), (-vr * 0.35, vr * 0.5)],
+            "down":  [(-vr * 0.25, vr * 0.45), (vr * 0.25, vr * 0.45)],
+            "up":    [(-vr * 0.25, vr * 0.1), (vr * 0.25, vr * 0.1)],
         }
         pupil_dir = {
-            "right": (1.0, 0.0), "left": (-1.0, 0.0),
-            "down":  (0.0, 1.0), "up":   (0.0, -1.0),
+            "right": (0.9, 0.0), "left": (-0.9, 0.0),
+            "down":  (0.0, 0.8), "up":   (0.0, -0.8),
         }
-        pdx, pdy = pupil_dir.get(p.facing, (1.0, 0.0))
-        for edx, edy in eye_offset.get(p.facing, []):
-            ex_, ey_ = cx + edx, cy + edy
+        vc_y = (vy_top + vy_bot + vr * 0.7) / 2
+        pdx, pdy = pupil_dir.get(p.facing, (0.9, 0.0))
+        for edx, edy in eye_off.get(p.facing, []):
+            ex_ = cx + edx
+            ey_ = vc_y - vr * 0.2 + edy
             self.canvas.create_oval(
-                ex_ - 2.2, ey_ - 2.2, ex_ + 2.2, ey_ + 2.2,
+                ex_ - 2.0, ey_ - 1.8, ex_ + 2.0, ey_ + 1.8,
                 fill="#ffffff", outline="",
             )
             self.canvas.create_oval(
-                ex_ + pdx * 0.9 - 1.2, ey_ + pdy * 0.9 - 1.2,
-                ex_ + pdx * 0.9 + 1.2, ey_ + pdy * 0.9 + 1.2,
-                fill="#1a0000", outline="",
+                ex_ + pdx * 0.8 - 1.1, ey_ + pdy * 0.8 - 1.1,
+                ex_ + pdx * 0.8 + 1.1, ey_ + pdy * 0.8 + 1.1,
+                fill="#000000", outline="",
             )
 
     def _draw_player_dead(self, ox: int, oy: int) -> None:
