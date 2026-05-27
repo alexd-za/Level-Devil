@@ -4,8 +4,36 @@ from dataclasses import dataclass, field
 from typing import Optional
 from entities import (
     Wall, FakeWall, Exit, FakeExit, TriggerTile, MovingExit,
-    Note, Powerup, Enemy, TILE_SIZE,
+    Note, Enemy, TILE_SIZE,
 )
+
+
+# ---------------------------------------------------------------------------
+# Lab messages
+# ---------------------------------------------------------------------------
+
+LAB_MESSAGES: dict[str, list[str]] = {
+    "invert_controls": [
+        "MOTOR RECAL ACTIVE  |  Subject response: nominal.",
+        "DIRECTIVE 7.3: Sensory inversion engaged. Adaptation in progress.",
+        "ORACLE NOTE: Subject 47 motor pathways temporarily rerouted. Expected.",
+    ],
+    "speed_boost": [
+        "METABOLIC SURGE DETECTED  |  Facility assumes no liability.",
+        "ADVISORY: Elevated locomotion observed. Subject is performing within tolerances.",
+        "ORACLE FLAG: Adrenaline spike logged. Group D subjects always run faster at the end.",
+    ],
+    "darkness": [
+        "OPTICAL CALIBRATION IN PROGRESS  |  Please remain calm.",
+        "FACILITY NOTICE: Sector lighting undergoing scheduled maintenance. Duration: unknown.",
+        "ORACLE LOG: Darkness response index nominal. Subject 47 fear response: suppressed.",
+    ],
+    "shield": [
+        "BARRIER PROTOCOL ACTIVE  |  Temporary. Everything is temporary.",
+        "ADVISORY: Protective field engaged. The facility did not authorize this.",
+        "ORACLE NOTE: Anomalous shielding detected. Subject 47 is adapting. Concerning.",
+    ],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -636,7 +664,6 @@ class LevelConfig:
     fake_wall_positions:   list[tuple[int, int]]                = field(default_factory=list)
     enemy_patrols:         list[list[tuple[int, int]]]          = field(default_factory=list)
     notes:                 list[tuple[int, int, str]]           = field(default_factory=list)
-    powerups:              list[tuple[int, int, str, float]]    = field(default_factory=list)
 
 
 class Level:
@@ -654,7 +681,6 @@ class Level:
         self.moving_exit: Optional[MovingExit] = None
         self.enemies:     list[Enemy]          = []
         self.notes:       list[Note]           = []
-        self.powerups:    list[Powerup]        = []
 
         self._invisible_positions = config.invisible_walls
         self._invisible_spawned   = False
@@ -692,9 +718,6 @@ class Level:
 
         for gx, gy, note_key in cfg.notes:
             self.notes.append(Note(gx, gy, NOTE_CONTENTS.get(note_key, ["[blank page]"])))
-
-        for gx, gy, kind, duration in cfg.powerups:
-            self.powerups.append(Powerup(gx, gy, kind, duration))
 
     def pixel_size(self) -> tuple[int, int]:
         return self.cols * TILE_SIZE, self.rows * TILE_SIZE
@@ -748,14 +771,12 @@ class Level:
                 elif trig.effect == "darkness":
                     player.apply_effect("darkness", trig.duration)
                     return "darkness_applied"
-
-        for pu in self.powerups:
-            if (not pu.collected
-                    and abs(player.gx - pu.gx) < 0.9
-                    and abs(player.gy - pu.gy) < 0.9):
-                pu.collected = True
-                player.apply_effect(pu.kind, pu.duration)
-                return "powerup_collected"
+                elif trig.effect == "speed_boost":
+                    player.apply_effect("speed_boost", trig.duration)
+                    return "speed_boost"
+                elif trig.effect == "shield":
+                    player.apply_effect("shield", trig.duration)
+                    return "shield"
 
         for note in self.notes:
             if (not note.collected
@@ -831,7 +852,7 @@ def make_level(number: int,
             player_start=start,
             exit_pos=(19, 19),
             fake_exit_pos=None if fake_already_triggered else (9, 9),
-            powerups=[(5, 9, "speed_boost", 4.0)],
+            trigger_tiles=[(3, 5, "speed_boost", 4.0)],
         )
         lv = Level(cfg)
         if not fake_already_triggered:
@@ -847,10 +868,11 @@ def make_level(number: int,
             grid=_clean_grid(raw),
             player_start=start,
             exit_pos=exit_pos,
-            # Two invert triggers: one early (unavoidable), one late surprise
             trigger_tiles=[
                 (7,  3,  "invert_controls", 5.0),
                 (15, 15, "invert_controls", 6.0),
+                (19, 7,  "shield",          4.0),
+                (5,  17, "speed_boost",     5.0),
             ],
             fake_wall_positions=[(23, 2)],
             enemy_patrols=[
@@ -859,9 +881,6 @@ def make_level(number: int,
             notes=[
                 (11, 3,  "s43_journal"),
                 (17, 9,  "s43_journal_2"),
-            ],
-            powerups=[
-                (5, 17, "speed_boost", 5.0),
             ],
         )
         return Level(cfg), start
@@ -884,8 +903,10 @@ def make_level(number: int,
             trigger_tiles=[
                 (13, 5,  "darkness",        8.0),
                 (7,  19, "invert_controls", 4.0),
+                (11, 15, "speed_boost",     4.0),
+                (3,  21, "shield",          4.0),
             ],
-            fake_wall_positions=[(4, 1), (26, 3)],
+            fake_wall_positions=[(5, 10)],
             enemy_patrols=[
                 [(13, 1), (21, 1), (13, 1)],
                 [(3,  15), (3, 23), (3, 15)],
@@ -893,9 +914,6 @@ def make_level(number: int,
             notes=[
                 (5,  11, "maintenance_leak"),
                 (13, 23, "s39_report"),
-            ],
-            powerups=[
-                (11, 15, "speed_boost", 4.0),
             ],
         )
         return Level(cfg), start
@@ -916,6 +934,8 @@ def make_level(number: int,
             trigger_tiles=[
                 (15, 3,  "invert_controls", 5.0),
                 (25, 17, "darkness",         7.0),
+                (9,  17, "speed_boost",      5.0),
+                (27, 7,  "shield",           4.0),
             ],
             invisible_walls=invisible,
             halfway_gx=17,
@@ -928,10 +948,6 @@ def make_level(number: int,
             notes=[
                 (17, 21, "oracle_log"),
                 (31, 23, "s44_notebook"),
-            ],
-            powerups=[
-                (9,  17, "speed_boost", 5.0),
-                (27, 7,  "shield",      4.0),
             ],
         )
         return Level(cfg), start
@@ -959,6 +975,9 @@ def make_level(number: int,
                 (27, 1,  "darkness",        9.0),
                 (35, 3,  "invert_controls", 5.0),
                 (19, 25, "invert_controls", 4.0),
+                (13, 3,  "speed_boost",     5.0),
+                (21, 7,  "shield",          4.0),
+                (31, 29, "speed_boost",     5.0),
             ],
             invisible_walls=invisible,
             halfway_gx=20,
@@ -970,14 +989,9 @@ def make_level(number: int,
                 [(19, 13), (31, 13), (31, 19), (19, 19), (19, 13)],
             ],
             notes=[
-                (9,  1,  "oracle_fragment"),  # moved from (7,3) – safe, above invisible zone
-                (11, 7,  "s31_warning"),       # moved from (3,5) – safe open cell
+                (9,  1,  "oracle_fragment"),
+                (11, 7,  "s31_warning"),
                 (29, 11, "oracle_final"),
-            ],
-            powerups=[
-                (13, 3,  "speed_boost", 5.0),
-                (21, 7,  "shield",      4.0),
-                (31, 29, "speed_boost", 5.0),
             ],
         )
         return Level(cfg), start

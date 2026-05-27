@@ -9,9 +9,9 @@ HUD_H    = 42
 
 BG       = "#000000"
 FG_DARK  = "#1a1a1a"
-FG_DIM   = "#3a3a3a"
-FG_MID   = "#777777"
-FG_MAIN  = "#bbbbbb"
+FG_DIM   = "#666666"
+FG_MID   = "#aaaaaa"
+FG_MAIN  = "#dddddd"
 FG_BRIGHT= "#ffffff"
 ACCENT   = "#ff3333"
 GREEN    = "#00ff88"
@@ -92,10 +92,7 @@ class UIManager:
         return cid
 
     def draw_scanlines(self) -> None:
-        for y in range(HUD_H, CANVAS_H, 4):
-            cid = self.canvas.create_line(
-                0, y, CANVAS_W, y, fill="#000000", width=1, stipple="gray25")
-            self._ids.append(cid)
+        pass
 
     # ------------------------------------------------------------------
     # Main menu
@@ -280,7 +277,8 @@ class UIManager:
                  deaths: int, hint: str,
                  invert_remaining: float, dark_remaining: float,
                  speed_remaining: float, shield_remaining: float,
-                 notes_found: int) -> None:
+                 notes_found: int,
+                 lab_msg: str = "", lab_timer: float = 0.0) -> None:
         self.clear()
 
         m, s = divmod(int(elapsed), 60)
@@ -302,7 +300,6 @@ class UIManager:
             self._t(12, 26, f"docs: {notes_found}",
                     font=("Courier", 9), fill="#886600", anchor="nw")
 
-        # Active effect banners stacked at bottom
         by = CANVAS_H - 18
         if hint:
             self._t(CANVAS_W // 2, by, hint,
@@ -336,6 +333,9 @@ class UIManager:
             self._t(CANVAS_W // 2, by - 5,
                     f"⚠  CONTROLS INVERTED  [{invert_remaining:.1f}s]  ⚠",
                     font=("Courier", 13, "bold"), fill=pulse, anchor="center")
+
+        if lab_msg and lab_timer > 0:
+            self.draw_lab_message(lab_msg, lab_timer)
 
     # ------------------------------------------------------------------
     # Death overlay
@@ -506,6 +506,37 @@ class UIManager:
             col  = YELLOW if line.startswith("[") else (FG_DIM if line == "" else FG_MAIN)
             self._t(CANVAS_W // 2, py + 24 + i * 15, line,
                     font=("Courier", 9), fill=col, anchor="center")
+
+    # ------------------------------------------------------------------
+    # Lab message corner popup
+    # ------------------------------------------------------------------
+
+    def draw_lab_message(self, msg: str, timer: float) -> None:
+        alpha = min(1.0, timer / 0.4) if timer > 4.6 else min(1.0, timer / 1.0)
+        stipple = "" if alpha > 0.85 else ("gray75" if alpha > 0.5 else "gray50")
+        base_kw = {"stipple": stipple} if stipple else {}
+
+        max_w = 280
+        panel_h = 46
+        px = 10
+        py = CANVAS_H - HUD_H - panel_h - 58
+
+        self._r(px, py, px + max_w, py + panel_h,
+                fill="#000000", outline="", **base_kw)
+        self._r(px + 2, py + 2, px + max_w - 2, py + panel_h - 2,
+                fill="#0a0000", outline="#6b1a00", width=1, **base_kw)
+
+        hdr_col = "#cc4400" if alpha > 0.6 else "#552200"
+        self._t(px + max_w // 2, py + 10,
+                "[ FACILITY LOG ]",
+                font=("Courier", 8, "bold"), fill=hdr_col, anchor="center",
+                **({} if not stipple else {}))
+
+        msg_col = "#bb5500" if alpha > 0.6 else "#663300"
+        self._t(px + max_w // 2, py + 28,
+                msg,
+                font=("Courier", 8), fill=msg_col, anchor="center",
+                width=max_w - 8)
 
     # ------------------------------------------------------------------
     # Leaderboard screen
